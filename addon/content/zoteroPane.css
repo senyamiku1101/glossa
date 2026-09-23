@@ -251,3 +251,12 @@
   outline: none;
   font: inherit;
 }
+
+/* ---- item pane section; sidebar.ts sets the height to fit the pane */
+
+.glossa-in-pane {
+  height: min(75vh, 720px);
+  border: 1px solid var(--glossa-border);
+  border-radius: 8px;
+  overflow: hidden;
+}

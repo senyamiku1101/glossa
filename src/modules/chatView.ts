@@ -1,7 +1,13 @@
 import { config } from "../../package.json";
 import { getString } from "../utils/locale";
-import { getPref } from "../utils/prefs";
-import { renderTemplate, type Target } from "./context";
+import { getPref, setPref } from "../utils/prefs";
+import {
+  CONTEXT_MODES,
+  renderQuestion,
+  renderTemplate,
+  type ContextMode,
+  type Target,
+} from "./context";
 import { conversations, type StoreEvent } from "./conversations";
 import { renderMarkdown } from "./markdown";
 import { runner } from "./runner";
@@ -31,6 +37,7 @@ export function initChatViews() {
     );
   };
   watch("tags", (view) => view.renderTags());
+  watch("chat.contextMode", (view) => view.renderMode());
   for (const key of ["profiles", "profiles.active", "api.model", "api.url"]) {
     watch(key, (view) => view.renderProfiles());
   }
@@ -74,6 +81,7 @@ export class ChatView {
     views.add(this);
     this.renderTags();
     this.renderProfiles();
+    this.renderMode();
     this.renderAll(true);
   }
 
@@ -159,6 +167,30 @@ export class ChatView {
                 tag: "span",
                 namespace: html,
                 classList: ["glossa-context"],
+              },
+              {
+                tag: "select",
+                namespace: html,
+                classList: ["glossa-mode-select"],
+                attributes: { title: getString("mode-title") },
+                children: CONTEXT_MODES.map((mode) => ({
+                  tag: "option",
+                  namespace: html,
+                  properties: {
+                    value: mode,
+                    textContent: getString(`mode-${mode}`),
+                  },
+                })),
+                listeners: [
+                  {
+                    type: "change",
+                    listener: (ev: Event) =>
+                      setPref(
+                        "chat.contextMode",
+                        (ev.target as HTMLSelectElement).value,
+                      ),
+                  },
+                ],
               },
               {
                 tag: "select",
@@ -379,6 +411,10 @@ export class ChatView {
     }
   }
 
+  renderMode() {
+    this.part<HTMLSelectElement>(".glossa-mode-select").value = contextMode();
+  }
+
   /** Profile switcher; hidden until the user saves a profile. */
   renderProfiles() {
     const select = this.part<HTMLSelectElement>(".glossa-profile-select");
@@ -419,10 +455,12 @@ export class ChatView {
     const input = box.value.trim();
     if (!input || runner.busy || !this.target) return;
     box.value = "";
+    const mode = contextMode();
     const answered = await runner.ask({
       target: this.target,
       display: input,
-      build: async () => ({ prompt: input, compact: input }),
+      build: (target, snapshot) =>
+        renderQuestion(input, target, mode, snapshot),
     });
     // A failed question does not have to be retyped.
     if (!answered && !box.value) box.value = input;
@@ -474,6 +512,13 @@ export class ChatView {
     }
     await applyProfile(id);
   }
+}
+
+function contextMode(): ContextMode {
+  const mode = String(getPref("chat.contextMode") || "");
+  return (CONTEXT_MODES as readonly string[]).includes(mode)
+    ? (mode as ContextMode)
+    : "related";
 }
 
 function appendBubble(

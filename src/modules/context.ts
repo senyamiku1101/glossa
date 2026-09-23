@@ -65,14 +65,69 @@ export async function renderTemplate(
   target: Target,
   config: ResolvedConfig,
 ): Promise<RenderedPrompt> {
-  const pack = await collectContext(template, input, target, config);
+  const pack = await collectContext(template, input, target, config, true);
   return {
     prompt: interpolate(template, pack).trim(),
-    compact: interpolate(template, {
-      ...pack,
-      related: pack.related ? "(excerpts omitted)" : "",
-    }).trim(),
+    compact: interpolate(template, compactPack(pack)).trim(),
   };
+}
+
+/** Later turns resend the question without the bulky document text. */
+function compactPack(pack: ContextPack): ContextPack {
+  return {
+    ...pack,
+    related: pack.related ? "(excerpts omitted)" : "",
+    fulltext: pack.fulltext ? "(full text omitted)" : "",
+  };
+}
+
+export const CONTEXT_MODES = [
+  "chat",
+  "related",
+  "fulltext",
+  "abstract",
+] as const;
+export type ContextMode = (typeof CONTEXT_MODES)[number];
+
+const QUESTION_CONTEXT: Record<
+  Exclude<ContextMode, "chat">,
+  { key: "related" | "fulltext" | "abstract"; heading: string }
+> = {
+  related: {
+    key: "related",
+    heading: "Relevant excerpts (cite them as [n] when you use them):",
+  },
+  fulltext: { key: "fulltext", heading: "Full text:" },
+  abstract: { key: "abstract", heading: "Abstract:" },
+};
+
+/**
+ * A typed question in the given context mode. Sections that come out empty
+ * are left out; without an item every mode is plain chat.
+ */
+export async function renderQuestion(
+  input: string,
+  target: Target,
+  mode: ContextMode,
+  config: ResolvedConfig,
+): Promise<RenderedPrompt> {
+  if (mode === "chat" || !target.item) return { prompt: input, compact: input };
+  const { key, heading } = QUESTION_CONTEXT[mode];
+  // The question is about the document, so rank the document's passages
+  // even when some text is selected; the selection is quoted separately.
+  const pack = await collectContext(`{{${key}}}`, input, target, config, false);
+  const compose = (source: ContextPack) => {
+    const year = source.year ? ` (${source.year})` : "";
+    return [
+      `Item: ${source.title}${year}`,
+      source[key] && `${heading}\n${source[key]}`,
+      source.selection && `Selected text:\n${source.selection}`,
+      `Question:\n${source.input}`,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+  };
+  return { prompt: compose(pack), compact: compose(compactPack(pack)) };
 }
 
 async function collectContext(
@@ -80,6 +135,7 @@ async function collectContext(
   input: string,
   target: Target,
   config: ResolvedConfig,
+  selectionAsCorpus: boolean,
 ): Promise<ContextPack> {
   const { item } = target;
   const selection = getPDFSelection();
@@ -94,20 +150,29 @@ async function collectContext(
       .join(", "),
     year: getYear(item),
     related: "",
+    fulltext: "",
   };
 
   // Retrieval extracts the PDF and calls the embeddings API; only pay for
   // it when the template will show the result.
-  if (templateKeys(template).has("related")) {
+  const keys = templateKeys(template);
+  if (keys.has("related")) {
     try {
       pack.related = await getRelatedText(
         target,
         input || selection || pack.title,
-        selection,
+        selectionAsCorpus ? selection : "",
         config,
       );
     } catch (error) {
       ztoolkit.log("[Glossa] related text failed", error);
+    }
+  }
+  if (keys.has("fulltext")) {
+    try {
+      pack.fulltext = (await getDocIndex(target))?.text || "";
+    } catch (error) {
+      ztoolkit.log("[Glossa] full text failed", error);
     }
   }
   return pack;
@@ -121,12 +186,16 @@ function getYear(item?: Zotero.Item) {
 
 type DocIndex = {
   chunks: string[];
+  /** The start of the document for {{fulltext}}, already truncated. */
+  text?: string;
   vectors?: Float32Array[];
   vectorKey?: string;
 };
 
 /** Enough for a book-length PDF; beyond this the tail is not indexed. */
 const MAX_CHUNKS = 400;
+/** Roughly 25k tokens; longer documents are cut, with a note. */
+const FULLTEXT_LIMIT = 100_000;
 const MAX_CACHED_DOCS = 12;
 const indexCache = new Map<string, DocIndex>();
 
@@ -199,7 +268,14 @@ async function getDocIndex(target: Target): Promise<DocIndex | undefined> {
           `[Glossa] indexing first ${MAX_CHUNKS} of ${all.length} chunks`,
         );
       }
-      const index: DocIndex = { chunks: all.slice(0, MAX_CHUNKS) };
+      const flat = text.replace(/[ \t]+/g, " ").trim();
+      const index: DocIndex = {
+        chunks: all.slice(0, MAX_CHUNKS),
+        text:
+          flat.length > FULLTEXT_LIMIT
+            ? `${flat.slice(0, FULLTEXT_LIMIT)}\n[… truncated: first ${FULLTEXT_LIMIT} of ${flat.length} characters]`
+            : flat,
+      };
       indexCache.set(cacheKey, index);
       if (indexCache.size > MAX_CACHED_DOCS) {
         indexCache.delete(indexCache.keys().next().value!);

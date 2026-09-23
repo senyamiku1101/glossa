@@ -12,6 +12,7 @@ export const TEMPLATE_KEYS = [
   "authors",
   "year",
   "related",
+  "fulltext",
 ] as const;
 
 export type TemplateKey = (typeof TEMPLATE_KEYS)[number];
