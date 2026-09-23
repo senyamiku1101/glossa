@@ -44,6 +44,9 @@ const {
   parseConversation,
   serializeConversation,
 } = await load("src/utils/history.ts");
+const { parseInline, parseMarkdown, texToParts } = await load(
+  "src/utils/markdown.ts",
+);
 
 const asserts = [];
 function assert(name, cond) {
@@ -637,6 +640,176 @@ assert(
     parseConversation(
       '{"turns":[{"role":"system","content":"x"},{"role":"user"}]}',
     ).length === 0,
+);
+
+// ---- markdown.ts
+
+const types = (blocks) => blocks.map((b) => b.type).join(",");
+const plain = (nodes) =>
+  nodes
+    .map((n) =>
+      n.type === "text" || n.type === "code" || n.type === "math"
+        ? n.text
+        : n.type === "br"
+          ? "\n"
+          : plain(n.children),
+    )
+    .join("");
+const inlineTypes = (nodes) => nodes.map((n) => n.type).join(",");
+
+// The shape of the answer that broke the sidebar: bullets written with "*",
+// bold labels, rules, headings and a nested list under an ordered item.
+const answer = parseMarkdown(
+  [
+    "这篇论文围绕 **TA36 单级低速轴流压气机**展开 [1, 5]。核心内容：",
+    "",
+    "---",
+    "",
+    "### 1. 研究背景",
+    "* **实验平台**：动叶数 20 [5]。",
+    "* **数据处理**：分辨 $m = -9 \\sim 10$ 阶模态 [4, 8]。",
+    "",
+    "---",
+    "",
+    "3. **地面进气畸变**：",
+    "   * 湍流气团被**轴向拉长**[12]。",
+    "   * 转子切割湍流 [13]。",
+    "* **补充实验验证**：3BPF 截止。",
+  ].join("\n"),
+);
+assert(
+  "real answer: block structure",
+  types(answer) === "paragraph,hr,heading,list,hr,list,list",
+);
+assert(
+  "real answer: bullets are list items, not emphasis",
+  answer[3].items.length === 2 &&
+    inlineTypes(answer[3].items[0][0].inline) === "strong,text" &&
+    !JSON.stringify(answer).includes('"em"'),
+);
+assert(
+  "real answer: nested list under an ordered item",
+  answer[5].ordered &&
+    answer[5].start === 3 &&
+    types(answer[5].items[0]) === "paragraph,list" &&
+    answer[5].items[0][1].items.length === 2,
+);
+assert(
+  "real answer: CJK bold without spaces, inline math",
+  inlineTypes(answer[0].inline) === "text,strong,text" &&
+    answer[3].items[1][0].inline.some(
+      (n) => n.type === "math" && n.text === "m = -9 \\sim 10",
+    ),
+);
+
+assert(
+  "emphasis never crosses paragraphs",
+  types(parseMarkdown("a *b\n\nc* d")) === "paragraph,paragraph" &&
+    !JSON.stringify(parseMarkdown("a *b\n\nc* d")).includes('"em"'),
+);
+assert(
+  "unclosed markers stay text",
+  plain(parseInline("**bold and *it")) === "**bold and *it",
+);
+assert(
+  "nested emphasis",
+  JSON.stringify(parseInline("*a **b** c*")) ===
+    JSON.stringify([
+      {
+        type: "em",
+        children: [
+          { type: "text", text: "a " },
+          { type: "strong", children: [{ type: "text", text: "b" }] },
+          { type: "text", text: " c" },
+        ],
+      },
+    ]),
+);
+assert(
+  "snake_case is not emphasis, 2 * 3 is not either",
+  inlineTypes(parseInline("use snake_case_name here")) === "text" &&
+    inlineTypes(parseInline("2 * 3 * 4")) === "text",
+);
+assert(
+  "code span protects markers",
+  JSON.stringify(parseInline("`a*b*c` and ~~gone~~")) ===
+    JSON.stringify([
+      { type: "code", text: "a*b*c" },
+      { type: "text", text: " and " },
+      { type: "del", children: [{ type: "text", text: "gone" }] },
+    ]),
+);
+assert(
+  "links and escapes",
+  (() => {
+    const nodes = parseInline("see [docs](https://x.test/a) \\*not em\\*");
+    return (
+      nodes[1].type === "link" &&
+      nodes[1].href === "https://x.test/a" &&
+      plain(nodes) === "see docs *not em*"
+    );
+  })(),
+);
+assert(
+  "dollar amounts are not math",
+  inlineTypes(parseInline("costs $5 and $10 today")) === "text",
+);
+assert(
+  "LaTeX delimiters",
+  inlineTypes(parseInline("\\(x^2\\) and $$y$$")) === "math,text,math",
+);
+const fenced = parseMarkdown("```python\nx = 1\n\ny = 2\n```\nafter");
+assert(
+  "fenced code keeps blank lines and language",
+  fenced[0].type === "code" &&
+    fenced[0].lang === "python" &&
+    fenced[0].text === "x = 1\n\ny = 2" &&
+    fenced[1].type === "paragraph",
+);
+assert(
+  "unclosed fence mid-stream runs to the end",
+  types(parseMarkdown("text\n```js\nlet a")) === "paragraph,code",
+);
+const table = parseMarkdown(
+  "| 转速 | 模态 |\n|:---|---:|\n| 2100 | $m=-2$ |\n| 2700 | a \\| b |",
+);
+assert(
+  "table with alignment and escaped pipe",
+  table[0].type === "table" &&
+    table[0].align.join() === "left,right" &&
+    table[0].rows.length === 2 &&
+    plain(table[0].rows[1][1]) === "a | b",
+);
+assert(
+  "math block and quote",
+  types(parseMarkdown("$$\nE = mc^2\n$$\n\n> quoted\n> more")) === "math,quote",
+);
+assert(
+  "a paragraph starting with $$ does not swallow the rest",
+  types(parseMarkdown("$$x$$ is small\n\n# Next")) === "paragraph,heading",
+);
+assert(
+  "list interrupts a paragraph; soft breaks become br",
+  types(parseMarkdown("以下几点：\n- a\n- b")) === "paragraph,list" &&
+    inlineTypes(parseMarkdown("line one\nline two")[0].inline) ===
+      "text,br,text",
+);
+assert(
+  "loose list stays one list",
+  (() => {
+    const list = parseMarkdown("1. a\n\n2. b\n\n3. c")[0];
+    return list.type === "list" && list.items.length === 3;
+  })(),
+);
+assert(
+  "texToParts symbols and scripts",
+  JSON.stringify(texToParts("m = -9 \\sim 10, x^{2} + y_i")) ===
+    JSON.stringify([
+      { text: "m = -9 ∼ 10, x" },
+      { text: "2", script: "sup" },
+      { text: " + y" },
+      { text: "i", script: "sub" },
+    ]),
 );
 
 const failed = asserts.filter((row) => !row.ok);

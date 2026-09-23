@@ -107,9 +107,13 @@
   cursor: pointer;
 }
 
-.glossa-profile-select,
-.glossa-mode-select {
+.glossa-profile-select {
   max-width: 9em;
+}
+
+.glossa-mode-select {
+  flex: none;
+  max-width: 12em;
 }
 
 .glossa-new,
@@ -208,6 +212,94 @@
 .glossa-msg pre code {
   padding: 0;
   background: none;
+}
+
+.glossa-msg h1,
+.glossa-msg h2,
+.glossa-msg h3,
+.glossa-msg h4,
+.glossa-msg h5,
+.glossa-msg h6 {
+  margin: 0.9em 0 0.4em;
+  font-size: 1.05em;
+  line-height: 1.35;
+}
+
+.glossa-msg h1 {
+  font-size: 1.25em;
+}
+
+.glossa-msg h2 {
+  font-size: 1.15em;
+}
+
+.glossa-msg > :first-child {
+  margin-top: 0;
+}
+
+.glossa-msg ul,
+.glossa-msg ol {
+  margin: 0.3em 0 0.6em;
+  padding-left: 1.5em;
+}
+
+.glossa-msg li {
+  margin: 0.15em 0;
+}
+
+.glossa-msg li > ul,
+.glossa-msg li > ol {
+  margin: 0.15em 0;
+}
+
+.glossa-msg hr {
+  margin: 0.8em 0;
+  border: none;
+  border-top: 1px solid var(--glossa-border);
+}
+
+.glossa-msg blockquote {
+  margin: 0.4em 0;
+  padding-left: 10px;
+  color: var(--glossa-muted);
+  border-left: 3px solid var(--glossa-border);
+}
+
+.glossa-msg a {
+  color: var(--color-accent, #2e7bcf);
+  cursor: pointer;
+}
+
+.glossa-table {
+  margin: 0.4em 0 0.6em;
+  overflow-x: auto;
+}
+
+.glossa-table table {
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.glossa-table th,
+.glossa-table td {
+  padding: 3px 8px;
+  border: 1px solid var(--glossa-border);
+  vertical-align: top;
+}
+
+.glossa-table th {
+  background: var(--glossa-code-bg);
+}
+
+.glossa-math {
+  font-family: "Cambria Math", "STIX Two Math", "Times New Roman", serif;
+  white-space: nowrap;
+}
+
+.glossa-math-block {
+  margin: 0.4em 0;
+  overflow-x: auto;
+  text-align: center;
 }
 
 .glossa-tags {

@@ -281,8 +281,12 @@ export class ChatView {
       this.frame = 0;
       const full = this.fullRenderQueued || !this.pendingEls;
       this.fullRenderQueued = false;
-      if (full) this.renderAll(false);
-      else this.renderPending();
+      try {
+        if (full) this.renderAll(false);
+        else this.renderPending();
+      } catch (error) {
+        ztoolkit.log("[Glossa] render failed", error);
+      }
     });
   }
 
@@ -317,7 +321,7 @@ export class ChatView {
         this.reasoningBlock(out, getString("reasoning")).body.textContent =
           turn.reasoning;
       }
-      appendBubble(out, "assistant").innerHTML = renderMarkdown(text);
+      renderMarkdown(appendBubble(out, "assistant"), text);
     }
     if (convo.failed) {
       // Not in the history: shown struck through, with the reason.
@@ -351,9 +355,7 @@ export class ChatView {
       pending.text ? "reasoning" : "reasoning-live",
     );
     els.reasoningBody.textContent = pending.reasoning;
-    els.answer.innerHTML = renderMarkdown(
-      pending.text || getString("thinking"),
-    );
+    renderMarkdown(els.answer, pending.text || getString("thinking"));
     if (follow) out.scrollTop = out.scrollHeight;
   }
 
