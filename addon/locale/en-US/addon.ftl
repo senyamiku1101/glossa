@@ -67,3 +67,4 @@ mode-chat = Chat only
 mode-related = PDF: relevant passages
 mode-fulltext = PDF: full text
 mode-abstract = Abstract
+tag-needs-input = Type a question first, then click { $name } again.

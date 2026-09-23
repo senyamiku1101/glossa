@@ -67,3 +67,4 @@ mode-chat = 纯对话
 mode-related = PDF 相关段落
 mode-fulltext = PDF 全文
 mode-abstract = 摘要
+tag-needs-input = 请先输入问题，再点击 { $name }。

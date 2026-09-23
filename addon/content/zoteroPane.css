@@ -61,10 +61,15 @@
 
 /* ---- chat view */
 
+/*
+ * The width comes from the pane (or the floating panel), never from the
+ * content: wide code, tables or formulas scroll inside their own boxes.
+ */
 .glossa-chat {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  contain: inline-size;
   color: var(--glossa-fg);
   background: var(--glossa-bg);
   font-family: system-ui, sans-serif;
@@ -77,8 +82,9 @@
 
 .glossa-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px 8px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--glossa-border);
 }
@@ -87,9 +93,15 @@
   font-weight: 600;
 }
 
+/*
+ * A nowrap title would report its full length as the header's minimum
+ * width and stretch the whole item pane; containment keeps it out of the
+ * width calculation. In a narrow pane the controls wrap below it.
+ */
 .glossa-context {
-  flex: 1;
+  flex: 1 1 10em;
   min-width: 0;
+  contain: inline-size;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -108,12 +120,17 @@
 }
 
 .glossa-profile-select {
+  min-width: 0;
   max-width: 9em;
 }
 
 .glossa-mode-select {
-  flex: none;
+  min-width: 0;
   max-width: 12em;
+}
+
+.glossa-new {
+  margin-left: auto;
 }
 
 .glossa-new,
@@ -140,6 +157,7 @@
 }
 
 .glossa-msg {
+  min-width: 0;
   margin: 0 0 10px;
   overflow-wrap: anywhere;
 }
@@ -293,7 +311,6 @@
 
 .glossa-math {
   font-family: "Cambria Math", "STIX Two Math", "Times New Roman", serif;
-  white-space: nowrap;
 }
 
 .glossa-math-block {
@@ -347,8 +364,15 @@
 /* ---- item pane section; sidebar.ts sets the height to fit the pane */
 
 .glossa-in-pane {
+  box-sizing: border-box;
+  width: 100%;
   height: min(75vh, 720px);
   border: 1px solid var(--glossa-border);
   border-radius: 8px;
   overflow: hidden;
+}
+
+.glossa-composer textarea.glossa-needs-input::placeholder {
+  color: var(--glossa-error);
+  opacity: 1;
 }

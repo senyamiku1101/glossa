@@ -1,6 +1,7 @@
 import { config } from "../../package.json";
 import { getString } from "../utils/locale";
 import { getPref, setPref } from "../utils/prefs";
+import { templateKeys } from "../utils/text";
 import {
   CONTEXT_MODES,
   renderQuestion,
@@ -10,6 +11,7 @@ import {
 } from "./context";
 import { conversations, type StoreEvent } from "./conversations";
 import { renderMarkdown } from "./markdown";
+import { getPDFSelection } from "./pdf";
 import { runner } from "./runner";
 import { applyProfile, getProfiles, matchingProfileId } from "./settings";
 import { getTags, type CommandTag } from "./tags";
@@ -472,12 +474,33 @@ export class ChatView {
     this.refreshTarget();
     if (runner.busy || !this.target) return;
     const input = this.input.value.trim();
+    if (!input && needsQuestion(tag.template)) {
+      this.askForInput(tag.name);
+      return;
+    }
     await runner.ask({
       target: this.target,
       display: input ? `${tag.name} · ${input}` : tag.name,
       build: (target, snapshot) =>
         renderTemplate(tag.template, input, target, snapshot),
     });
+  }
+
+  /** Point at the empty input box until the user types. */
+  private askForInput(tagName: string) {
+    const box = this.input;
+    const original = getString("input-placeholder");
+    box.placeholder = getString("tag-needs-input", { args: { name: tagName } });
+    box.classList.add("glossa-needs-input");
+    box.addEventListener(
+      "input",
+      () => {
+        box.placeholder = original;
+        box.classList.remove("glossa-needs-input");
+      },
+      { once: true },
+    );
+    box.focus();
   }
 
   private newConversation() {
@@ -514,6 +537,16 @@ export class ChatView {
     }
     await applyProfile(id);
   }
+}
+
+/**
+ * A template built around a typed question ({{input}}) has nothing to ask
+ * without one, unless it can use the PDF selection instead.
+ */
+function needsQuestion(template: string) {
+  const keys = templateKeys(template);
+  if (!keys.has("input")) return false;
+  return !(keys.has("selection") && getPDFSelection());
 }
 
 function contextMode(): ContextMode {

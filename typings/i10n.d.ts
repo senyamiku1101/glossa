@@ -89,6 +89,7 @@ export type FluentMessageId =
   | 'tag-color'
   | 'tag-delete'
   | 'tag-name'
+  | 'tag-needs-input'
   | 'tag-new-name'
   | 'tag-template'
   | 'test-all-chat'
