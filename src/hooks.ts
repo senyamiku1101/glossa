@@ -3,6 +3,9 @@ import { getString, initLocale } from "./utils/locale";
 import { migrateLegacySecrets } from "./utils/secrets";
 import { createZToolkit } from "./utils/ztoolkit";
 import { chat } from "./modules/chat";
+import { disposeChatViews, initChatViews } from "./modules/chatView";
+import { conversations } from "./modules/conversations";
+import { runner } from "./modules/runner";
 import { initPreferencesPane } from "./modules/preferences";
 
 async function onStartup() {
@@ -19,6 +22,8 @@ async function onStartup() {
   } catch (error) {
     ztoolkit.log("[Glossa] secret migration failed", error);
   }
+  conversations.init();
+  initChatViews();
   chat.init();
 
   await Promise.all(
@@ -39,7 +44,10 @@ async function onMainWindowUnload(win: Window) {
 }
 
 function onShutdown() {
+  runner.stop();
   chat.dispose();
+  disposeChatViews();
+  conversations.dispose();
   ztoolkit.unregisterAll();
   addon.data.alive = false;
   // @ts-expect-error runtime instance

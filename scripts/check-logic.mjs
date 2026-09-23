@@ -38,6 +38,12 @@ const {
 } = await load("src/utils/protocol.ts");
 const { DEFAULT_CONFIG, configEquals, normalizeConfig, parseProfiles } =
   await load("src/utils/config.ts");
+const {
+  buildHistory,
+  conversationFileName,
+  parseConversation,
+  serializeConversation,
+} = await load("src/utils/history.ts");
 
 const asserts = [];
 function assert(name, cond) {
@@ -581,6 +587,57 @@ assert(
     profiles[0].config.model === "deepseek-chat",
 );
 assert("parseProfiles tolerates junk", parseProfiles("{").length === 0);
+
+// ---- history.ts
+
+const history = [
+  { role: "user", content: "q1" },
+  { role: "assistant", content: "a1" },
+  { role: "user", content: "q2" },
+  { role: "assistant", content: "a2" },
+];
+const sent = buildHistory(history, "FULL q3", null);
+assert(
+  "buildHistory appends the full prompt",
+  sent.length === 5 && sent[4].content === "FULL q3" && sent[4].role === "user",
+);
+const cut = buildHistory(history, "q3", 2);
+assert(
+  "buildHistory drops a leading reply after the cut",
+  cut.length === 1 && cut[0].content === "q3",
+);
+assert(
+  "buildHistory limit 3 keeps user-first",
+  buildHistory(history, "q3", 3)[0].content === "q2",
+);
+assert(
+  "conversationFileName",
+  conversationFileName({ type: "user" }, "ABCD1234") === "u_ABCD1234.json" &&
+    conversationFileName({ type: "group", groupID: 42 }, "AB/CD") ===
+      "g42_ABCD.json" &&
+    conversationFileName({ type: "user" }, "../") === undefined,
+);
+const stored = serializeConversation("Title", [
+  { role: "user", content: "compact", display: "AskPDF · q" },
+  { role: "assistant", content: "answer", reasoning: "secret thoughts" },
+]);
+const restored = parseConversation(stored);
+assert(
+  "conversation round trip keeps display, drops reasoning",
+  restored.length === 2 &&
+    restored[0].display === "AskPDF · q" &&
+    restored[1].content === "answer" &&
+    !("reasoning" in restored[1]) &&
+    !stored.includes("secret thoughts"),
+);
+assert(
+  "parseConversation rejects junk and bad turns",
+  parseConversation("nope") === undefined &&
+    parseConversation("{}") === undefined &&
+    parseConversation(
+      '{"turns":[{"role":"system","content":"x"},{"role":"user"}]}',
+    ).length === 0,
+);
 
 const failed = asserts.filter((row) => !row.ok);
 console.log(

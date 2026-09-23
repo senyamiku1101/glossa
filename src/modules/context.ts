@@ -36,7 +36,7 @@ export function getActiveTarget(): Target {
   if (reader?.itemID) {
     const attachment = asItem(Zotero.Items.get(reader.itemID));
     if (attachment)
-      return makeTarget(attachment.parentItem || attachment, attachment);
+      return targetFor(attachment.parentItem || attachment, attachment);
   }
   let selected: Zotero.Item[] = [];
   try {
@@ -45,13 +45,12 @@ export function getActiveTarget(): Target {
     // pane may be unavailable
   }
   const first = selected[0];
-  if (first?.isAttachment())
-    return makeTarget(first.parentItem || first, first);
-  if (first) return makeTarget(first);
+  if (first?.isAttachment()) return targetFor(first.parentItem || first, first);
+  if (first) return targetFor(first);
   return { key: "none", label: "" };
 }
 
-function makeTarget(item: Zotero.Item, attachment?: Zotero.Item): Target {
+export function targetFor(item: Zotero.Item, attachment?: Zotero.Item): Target {
   return {
     key: `${item.libraryID}/${item.key}`,
     label: item.getDisplayTitle(),

@@ -1,8 +1,10 @@
 /*
- * Glossa floating chat. Colours come from Zotero 7's theme variables so the
- * panel follows light/dark mode; the fallbacks cover hosts without them.
+ * Glossa chat UI, shared by the floating panel and the item pane section.
+ * Colours come from Zotero 7's theme variables so both follow light/dark
+ * mode; the fallbacks cover hosts without them.
  */
-.glossa-panel {
+.glossa-panel,
+.glossa-chat {
   --glossa-bg: var(--material-background, #fff);
   --glossa-fg: var(--fill-primary, #111);
   --glossa-muted: var(--fill-secondary, #666);
@@ -10,27 +12,11 @@
   --glossa-user-bg: var(--fill-quinary, #f1f3f5);
   --glossa-code-bg: var(--fill-quinary, #f4f4f4);
   --glossa-error: #c0392b;
-
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
-  z-index: 9999;
-  display: flex;
-  flex-direction: column;
-  width: 440px;
-  max-height: 72vh;
-  overflow: hidden;
-  background: var(--glossa-bg);
-  color: var(--glossa-fg);
-  border: 1px solid var(--glossa-border);
-  border-radius: 12px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
-  font-family: system-ui, sans-serif;
-  font-size: 13px;
 }
 
 @media (prefers-color-scheme: dark) {
-  .glossa-panel {
+  .glossa-panel,
+  .glossa-chat {
     --glossa-bg: var(--material-background, #2b2b2b);
     --glossa-fg: var(--fill-primary, #eee);
     --glossa-muted: var(--fill-secondary, #aaa);
@@ -38,12 +24,55 @@
     --glossa-user-bg: var(--fill-quinary, #3a3a3a);
     --glossa-code-bg: var(--fill-quinary, #1e1e1e);
     --glossa-error: #ff8a80;
+  }
+}
+
+/* ---- floating panel: position only */
+
+.glossa-panel {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 9999;
+  display: flex;
+  width: 440px;
+  height: min(72vh, 680px);
+  overflow: hidden;
+  background: var(--glossa-bg);
+  border: 1px solid var(--glossa-border);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  .glossa-panel {
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
   }
 }
 
 .glossa-panel[hidden] {
   display: none;
+}
+
+.glossa-panel > .glossa-chat {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ---- chat view */
+
+.glossa-chat {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  color: var(--glossa-fg);
+  background: var(--glossa-bg);
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+}
+
+.glossa-chat [hidden] {
+  display: none !important;
 }
 
 .glossa-header {
@@ -68,10 +97,19 @@
   font-size: 12px;
 }
 
-.glossa-panel button {
+.glossa-chat button,
+.glossa-chat select {
   font: inherit;
   font-size: 12px;
+}
+
+.glossa-chat button {
   cursor: pointer;
+}
+
+.glossa-profile-select,
+.glossa-mode-select {
+  max-width: 9em;
 }
 
 .glossa-new,
@@ -90,8 +128,9 @@
 
 .glossa-transcript {
   flex: 1;
-  min-height: 160px;
+  min-height: 120px;
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 10px 12px;
   line-height: 1.55;
 }
@@ -117,18 +156,38 @@
   border-radius: 10px;
 }
 
-/* Unanswered question: not kept in the conversation history. */
-.glossa-dropped {
-  opacity: 0.5;
-  text-decoration: line-through;
-}
-
 .glossa-hint {
   color: var(--glossa-muted);
 }
 
 .glossa-error {
   color: var(--glossa-error);
+  white-space: pre-wrap;
+}
+
+/* Unanswered question: not kept in the conversation history. */
+.glossa-dropped {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.glossa-reasoning {
+  margin: 0 0 6px;
+  color: var(--glossa-muted);
+  font-size: 12px;
+}
+
+.glossa-reasoning summary {
+  cursor: pointer;
+}
+
+.glossa-reasoning-body {
+  max-height: 16em;
+  margin-top: 4px;
+  padding-left: 8px;
+  overflow: auto;
+  white-space: pre-wrap;
+  border-left: 2px solid var(--glossa-border);
 }
 
 .glossa-msg code {
@@ -156,6 +215,10 @@
   flex-wrap: wrap;
   gap: 6px;
   padding: 0 12px 8px;
+}
+
+.glossa-tags:empty {
+  display: none;
 }
 
 .glossa-tag {
@@ -187,8 +250,4 @@
   border: none;
   outline: none;
   font: inherit;
-}
-
-.glossa-stop[hidden] {
-  display: none;
 }
