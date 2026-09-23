@@ -1,76 +1,412 @@
 <linkset>
   <html:link rel="localization" href="__addonRef__-preferences.ftl" />
 </linkset>
-<vbox id="__addonRef__-preferences" class="main-section">
+<vbox
+  id="__addonRef__-preferences"
+  class="main-section glossa-prefs"
+  onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window })"
+>
+  <!--
+    Controls carry data-pref="<key>" (without the extensions.zotero.glossa
+    prefix) and are bound in src/modules/preferences.ts. API keys have no
+    data-pref: they live in the login manager.
+  -->
   <groupbox>
-    <label><html:h2 data-l10n-id="pref-chat"></html:h2></label>
-    <hbox align="center">
-      <html:label data-l10n-id="pref-api-url" for="__addonRef__-api-url"></html:label>
-      <html:input
-        id="__addonRef__-api-url"
-        type="text"
-        preference="api.url"
-      />
-    </hbox>
-    <hbox align="center">
-      <html:label data-l10n-id="pref-api-key" for="__addonRef__-api-key"></html:label>
-      <html:input
-        id="__addonRef__-api-key"
-        type="password"
-        preference="api.key"
-      />
-    </hbox>
-    <hbox align="center">
-      <html:label data-l10n-id="pref-api-model" for="__addonRef__-api-model"></html:label>
-      <html:input
-        id="__addonRef__-api-model"
-        type="text"
-        preference="api.model"
-      />
-    </hbox>
-    <hbox align="center">
-      <html:label data-l10n-id="pref-api-temperature" for="__addonRef__-api-temperature"></html:label>
-      <html:input
-        id="__addonRef__-api-temperature"
-        type="text"
-        preference="api.temperature"
-      />
-    </hbox>
-  </groupbox>
-  <groupbox>
-    <label><html:h2 data-l10n-id="pref-embed"></html:h2></label>
-    <hbox align="center">
-      <html:label data-l10n-id="pref-embed-url" for="__addonRef__-embed-url"></html:label>
-      <html:input
-        id="__addonRef__-embed-url"
-        type="text"
-        preference="embed.url"
-      />
-    </hbox>
-    <hbox align="center">
-      <html:label data-l10n-id="pref-embed-key" for="__addonRef__-embed-key"></html:label>
-      <html:input
-        id="__addonRef__-embed-key"
-        type="password"
-        preference="embed.key"
-      />
-    </hbox>
-    <hbox align="center">
-      <html:label data-l10n-id="pref-embed-model" for="__addonRef__-embed-model"></html:label>
-      <html:input
-        id="__addonRef__-embed-model"
-        type="text"
-        preference="embed.model"
-      />
-    </hbox>
-    <hbox align="center">
-      <html:label data-l10n-id="pref-related" for="__addonRef__-related"></html:label>
-      <html:input
-        id="__addonRef__-related"
-        type="number"
-        preference="relatedNumber"
-      />
-    </hbox>
+    <label><html:h2 data-l10n-id="pref-general"></html:h2></label>
+    <html:div class="glossa-layout">
+      <html:div class="glossa-profiles">
+        <html:button
+          id="__addonRef__-profile-save"
+          class="glossa-profile-save"
+          data-l10n-id="pref-profile-save"
+        ></html:button>
+        <html:div
+          id="__addonRef__-profile-list"
+          class="glossa-profile-list"
+        ></html:div>
+        <html:button
+          id="__addonRef__-profile-test-all"
+          class="glossa-profile-test"
+          data-l10n-id="pref-profile-test-all"
+        ></html:button>
+      </html:div>
+
+      <html:div class="glossa-config">
+        <html:div class="glossa-tabs">
+          <html:button
+            class="glossa-tab"
+            data-tab="chat"
+            data-l10n-id="pref-tab-chat"
+          ></html:button>
+          <html:button
+            class="glossa-tab"
+            data-tab="embed"
+            data-l10n-id="pref-tab-embed"
+          ></html:button>
+          <html:button
+            class="glossa-tab"
+            data-tab="other"
+            data-l10n-id="pref-tab-other"
+          ></html:button>
+        </html:div>
+
+        <!-- Chat model -->
+        <html:div class="glossa-tabpanel" data-panel="chat">
+          <html:div class="glossa-row">
+            <html:label
+              id="__addonRef__-api-url-label"
+              for="__addonRef__-api-url"
+            ></html:label>
+            <html:div class="glossa-field">
+              <html:input
+                id="__addonRef__-api-url"
+                type="text"
+                data-pref="api.url"
+              />
+              <html:button
+                id="__addonRef__-api-url-presets"
+                class="glossa-icon-button"
+                data-l10n-id="pref-presets"
+              ></html:button>
+              <html:label class="glossa-switch">
+                <html:input id="__addonRef__-api-url-full" type="checkbox" />
+                <html:span data-l10n-id="pref-full-url"></html:span>
+              </html:label>
+            </html:div>
+          </html:div>
+          <html:div class="glossa-row" id="__addonRef__-api-final-row">
+            <html:label data-l10n-id="pref-final-url"></html:label>
+            <html:code
+              id="__addonRef__-api-final-url"
+              class="glossa-final-url"
+            ></html:code>
+          </html:div>
+          <html:div class="glossa-row">
+            <html:label
+              data-l10n-id="pref-api-key"
+              for="__addonRef__-api-key"
+            ></html:label>
+            <html:div class="glossa-field">
+              <html:input id="__addonRef__-api-key" type="password" />
+              <html:button
+                class="glossa-key-toggle"
+                data-for="__addonRef__-api-key"
+              ></html:button>
+            </html:div>
+          </html:div>
+          <html:div class="glossa-row">
+            <html:label
+              data-l10n-id="pref-api-model"
+              for="__addonRef__-api-model"
+            ></html:label>
+            <html:div class="glossa-field">
+              <html:input
+                id="__addonRef__-api-model"
+                type="text"
+                data-pref="api.model"
+              />
+              <html:button
+                id="__addonRef__-api-model-list"
+                class="glossa-icon-button"
+                data-l10n-id="pref-model-list"
+              ></html:button>
+            </html:div>
+          </html:div>
+          <html:div class="glossa-row">
+            <html:label class="glossa-check">
+              <html:input type="checkbox" data-pref="api.temperature.enabled" />
+              <html:span data-l10n-id="pref-api-temperature"></html:span>
+            </html:label>
+            <html:div class="glossa-field">
+              <html:input
+                type="range"
+                min="0"
+                max="2"
+                step="0.1"
+                data-pref="api.temperature"
+                data-type="float-string"
+              />
+              <html:output
+                class="glossa-value"
+                data-show="api.temperature"
+              ></html:output>
+            </html:div>
+          </html:div>
+          <html:div class="glossa-row">
+            <html:label class="glossa-check">
+              <html:input type="checkbox" data-pref="api.maxTokens.enabled" />
+              <html:span data-l10n-id="pref-api-max-tokens"></html:span>
+            </html:label>
+            <html:div class="glossa-field">
+              <html:input
+                type="range"
+                min="1024"
+                max="131072"
+                step="1024"
+                data-pref="api.maxTokens"
+                data-type="int"
+              />
+              <html:input
+                type="number"
+                min="1"
+                class="glossa-number"
+                data-pref="api.maxTokens"
+                data-type="int"
+              />
+            </html:div>
+          </html:div>
+          <html:div class="glossa-row">
+            <html:label class="glossa-check">
+              <html:input
+                type="checkbox"
+                data-pref="api.reasoningEffort.enabled"
+              />
+              <html:span data-l10n-id="pref-api-effort"></html:span>
+            </html:label>
+            <html:div class="glossa-field">
+              <html:select data-pref="api.reasoningEffort">
+                <html:option value="none">none</html:option>
+                <html:option value="low">low</html:option>
+                <html:option value="medium">medium</html:option>
+                <html:option value="high">high</html:option>
+                <html:option value="xhigh">xhigh</html:option>
+                <html:option value="max">max</html:option>
+              </html:select>
+            </html:div>
+          </html:div>
+          <html:p id="__addonRef__-api-hint" class="glossa-hint"></html:p>
+          <html:details class="glossa-advanced">
+            <html:summary data-l10n-id="pref-advanced"></html:summary>
+            <html:div class="glossa-row">
+              <html:label data-l10n-id="pref-api-protocol"></html:label>
+              <html:div class="glossa-field">
+                <html:select data-pref="api.protocol">
+                  <html:option value="openai-chat"
+                    >OpenAI Chat Completions</html:option
+                  >
+                  <html:option value="openai-responses"
+                    >OpenAI Responses</html:option
+                  >
+                  <html:option value="anthropic-messages"
+                    >Anthropic Messages</html:option
+                  >
+                </html:select>
+              </html:div>
+            </html:div>
+            <html:div class="glossa-row glossa-row-top">
+              <html:label data-l10n-id="pref-system-prompt"></html:label>
+              <html:textarea
+                id="__addonRef__-api-system"
+                rows="4"
+                data-pref="api.systemPrompt"
+              ></html:textarea>
+            </html:div>
+            <html:div class="glossa-row glossa-row-top">
+              <html:label data-l10n-id="pref-extra-params"></html:label>
+              <html:div class="glossa-stack">
+                <html:textarea
+                  rows="4"
+                  class="glossa-code"
+                  data-pref="api.extraParams"
+                  data-validate="json"
+                ></html:textarea>
+                <html:span
+                  id="__addonRef__-api-extra-error"
+                  class="glossa-error"
+                ></html:span>
+                <html:span
+                  class="glossa-hint"
+                  data-l10n-id="pref-extra-help"
+                ></html:span>
+              </html:div>
+            </html:div>
+          </html:details>
+        </html:div>
+
+        <!-- Embeddings -->
+        <html:div class="glossa-tabpanel" data-panel="embed" hidden="hidden">
+          <html:div class="glossa-row">
+            <html:label class="glossa-check glossa-span">
+              <html:input type="checkbox" data-pref="embed.enabled" />
+              <html:span data-l10n-id="pref-embed-enabled"></html:span>
+            </html:label>
+          </html:div>
+          <html:div class="glossa-row">
+            <html:label
+              data-l10n-id="pref-embed-url"
+              for="__addonRef__-embed-url"
+            ></html:label>
+            <html:div class="glossa-field">
+              <html:input
+                id="__addonRef__-embed-url"
+                type="text"
+                data-pref="embed.url"
+              />
+              <html:button
+                id="__addonRef__-embed-url-presets"
+                class="glossa-icon-button"
+                data-l10n-id="pref-presets"
+              ></html:button>
+            </html:div>
+          </html:div>
+          <html:p id="__addonRef__-embed-hint" class="glossa-hint"></html:p>
+          <html:div class="glossa-row">
+            <html:label
+              data-l10n-id="pref-embed-key"
+              for="__addonRef__-embed-key"
+            ></html:label>
+            <html:div class="glossa-field">
+              <html:input id="__addonRef__-embed-key" type="password" />
+              <html:button
+                class="glossa-key-toggle"
+                data-for="__addonRef__-embed-key"
+              ></html:button>
+            </html:div>
+          </html:div>
+          <html:div class="glossa-row">
+            <html:label
+              data-l10n-id="pref-embed-model"
+              for="__addonRef__-embed-model"
+            ></html:label>
+            <html:div class="glossa-field">
+              <html:input
+                id="__addonRef__-embed-model"
+                type="text"
+                data-pref="embed.model"
+              />
+              <html:button
+                id="__addonRef__-embed-model-presets"
+                class="glossa-icon-button"
+                data-l10n-id="pref-presets"
+              ></html:button>
+            </html:div>
+          </html:div>
+          <html:div class="glossa-row">
+            <html:label data-l10n-id="pref-embed-batch"></html:label>
+            <html:div class="glossa-field">
+              <html:input
+                type="range"
+                min="1"
+                max="100"
+                step="1"
+                data-pref="embed.batchSize"
+                data-type="int"
+              />
+              <html:output
+                class="glossa-value"
+                data-show="embed.batchSize"
+              ></html:output>
+            </html:div>
+          </html:div>
+        </html:div>
+
+        <!-- Other parameters -->
+        <html:div class="glossa-tabpanel" data-panel="other" hidden="hidden">
+          <html:div class="glossa-row">
+            <html:label data-l10n-id="pref-related"></html:label>
+            <html:div class="glossa-field">
+              <html:input
+                type="range"
+                min="1"
+                max="30"
+                step="1"
+                data-pref="relatedNumber"
+                data-type="int"
+              />
+              <html:output
+                class="glossa-value"
+                data-show="relatedNumber"
+              ></html:output>
+            </html:div>
+          </html:div>
+          <html:div class="glossa-row">
+            <html:label class="glossa-check">
+              <html:input type="checkbox" data-pref="chatNumber.enabled" />
+              <html:span data-l10n-id="pref-chat-number"></html:span>
+            </html:label>
+            <html:div class="glossa-field">
+              <html:input
+                type="range"
+                min="1"
+                max="99"
+                step="1"
+                data-pref="chatNumber"
+                data-type="int"
+              />
+              <html:input
+                type="number"
+                min="1"
+                max="999"
+                class="glossa-number"
+                data-pref="chatNumber"
+                data-type="int"
+              />
+            </html:div>
+          </html:div>
+          <html:p
+            class="glossa-hint"
+            data-l10n-id="pref-chat-number-help"
+          ></html:p>
+          <html:div class="glossa-row">
+            <html:label data-l10n-id="pref-storage"></html:label>
+            <html:div class="glossa-field">
+              <html:code
+                id="__addonRef__-storage-path"
+                class="glossa-final-url"
+              ></html:code>
+              <html:button
+                id="__addonRef__-storage-open"
+                data-l10n-id="pref-storage-open"
+              ></html:button>
+            </html:div>
+          </html:div>
+          <html:h3 data-l10n-id="pref-tags"></html:h3>
+          <html:p class="glossa-hint" data-l10n-id="pref-tags-help"></html:p>
+          <html:div id="__addonRef__-tag-list"></html:div>
+          <html:div class="glossa-actions">
+            <html:button
+              id="__addonRef__-tag-add"
+              data-l10n-id="pref-tag-add"
+            ></html:button>
+            <html:button
+              id="__addonRef__-tag-reset"
+              data-l10n-id="pref-tag-reset"
+            ></html:button>
+          </html:div>
+        </html:div>
+      </html:div>
+    </html:div>
+
+    <html:div class="glossa-test">
+      <html:h3 data-l10n-id="pref-test-title"></html:h3>
+      <html:div
+        id="__addonRef__-test-output"
+        class="glossa-test-output"
+      ></html:div>
+      <html:div class="glossa-actions">
+        <html:button
+          id="__addonRef__-test-run"
+          class="glossa-primary"
+          data-l10n-id="pref-test-run"
+        ></html:button>
+        <html:button
+          id="__addonRef__-test-cancel"
+          hidden="hidden"
+          data-l10n-id="pref-test-cancel"
+        ></html:button>
+        <html:button
+          id="__addonRef__-test-copy"
+          hidden="hidden"
+          data-l10n-id="pref-test-copy"
+        ></html:button>
+        <html:span class="glossa-spacer"></html:span>
+        <html:button
+          id="__addonRef__-test-help"
+          data-l10n-id="pref-test-help"
+        ></html:button>
+      </html:div>
+    </html:div>
+    <html:p class="glossa-hint" data-l10n-id="pref-key-note"></html:p>
   </groupbox>
   <html:p data-l10n-id="pref-license-note"></html:p>
 </vbox>

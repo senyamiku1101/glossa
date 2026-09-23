@@ -17,12 +17,13 @@ It is a **clean-room reimplementation** of the useful workflow (chat with the cu
 
 ## MVP (v0.1)
 
-- Floating chat (`Ctrl+/`)
+- Floating chat (`Ctrl+/`, also inside the PDF reader), one conversation per item, stoppable streaming
 - OpenAI-compatible streaming (`/v1/chat/completions`)
-- Command tags: AskPDF, Translate, Summarize, AskAbstract
+- Command tags: AskPDF, Translate, Summarize, AskAbstract — editable in preferences
 - Safe templates: `{{input}}` `{{selection}}` `{{abstract}}` `{{title}}` `{{authors}}` `{{year}}` `{{related}}`
-- Related-paragraph retrieval via embeddings, with keyword fallback
+- Related-paragraph retrieval via embeddings, with keyword fallback; chunk vectors are cached per PDF
 - Preferences for chat + embedding endpoints
+- API keys stored in Zotero's login manager, never in `prefs.js`
 
 Later (same license, still in this repo): reader sidebar, outline, annotation helpers, agent tools.
 
@@ -35,9 +36,13 @@ Later (same license, still in this repo): reader sidebar, outline, annotation he
 
 Configure **Edit → Settings → Glossa**: API URL, key, model. DeepSeek, SiliconFlow, OpenRouter, and other OpenAI-compatible hosts work if they expose chat completions.
 
+Keys go to the login manager (`logins.json`, encrypted with the profile's `key4.db`, plus the primary password if you set one). Keys saved by v0.1 in `prefs.js` are moved there on first start and removed from prefs.
+
+`npm run check` tests the pure helpers in `src/utils/text.ts` under plain Node; `npm run lint:check` must pass before a release.
+
 ## Command tags
 
-Tags are JSON in preferences, not executable JavaScript.
+Tags are edited in the Glossa settings pane and stored as JSON in preferences. They are templates, not executable JavaScript. Only templates that contain `{{related}}` read the PDF and call the embeddings API. When a later message is sent, the excerpts from earlier turns are left out and only the question stays in the history.
 
 ```
 Use this context:
@@ -66,6 +71,7 @@ See [PRINCIPLES.md](PRINCIPLES.md).
 - 没有付费墙、没有 `pro-entry.enc`、没有设备数限制。
 - 仓库源码就是 xpi 源码。
 - 命令标签只做 `{{变量}}` 替换，**不执行用户 JS**。
-- 使用你自己的 API Key（OpenAI 兼容接口）。
+- 使用你自己的 API Key（OpenAI 兼容接口）。密钥存放在 Zotero 登录管理器里，不写入 `prefs.js`。
+- 每个条目有各自的对话，可以随时点「新对话」清空；回答生成中可以点「停止」。
 
-快捷键 `Ctrl+/`。设置在「编辑 → 设置 → Glossa」。
+快捷键 `Ctrl+/`（在 PDF 阅读器里也能用）。设置在「编辑 → 设置 → Glossa」，命令标签也在设置页里编辑。

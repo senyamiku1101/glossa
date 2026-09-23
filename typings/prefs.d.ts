@@ -8,16 +8,29 @@ declare namespace _ZoteroTypes {
   interface Prefs {
     PluginPrefsMap: {
       "enable": boolean;
+      "api.protocol": string;
       "api.url": string;
-      "api.key": string;
+      "api.urlMode": string;
       "api.model": string;
       "api.temperature": string;
+      "api.temperature.enabled": boolean;
+      "api.maxTokens": number;
+      "api.maxTokens.enabled": boolean;
+      "api.reasoningEffort": string;
+      "api.reasoningEffort.enabled": boolean;
+      "api.extraParams": string;
+      "api.systemPrompt": string;
+      "embed.enabled": boolean;
       "embed.url": string;
       "embed.model": string;
-      "embed.key": string;
+      "embed.batchSize": number;
       "relatedNumber": number;
       "chatNumber": number;
+      "chatNumber.enabled": boolean;
+      "chat.contextMode": string;
       "tags": string;
+      "profiles": string;
+      "profiles.active": string;
     };
   }
 }

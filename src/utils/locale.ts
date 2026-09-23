@@ -28,9 +28,7 @@ function getString(
 
   if (!pattern) return id;
   if (branch && pattern.attributes) {
-    return (
-      pattern.attributes.find((attr) => attr.name === branch)?.value || id
-    );
+    return pattern.attributes.find((attr) => attr.name === branch)?.value || id;
   }
   return pattern.value || id;
 }

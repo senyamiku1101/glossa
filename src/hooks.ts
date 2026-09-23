@@ -1,7 +1,9 @@
 import { config } from "../package.json";
 import { getString, initLocale } from "./utils/locale";
+import { migrateLegacySecrets } from "./utils/secrets";
 import { createZToolkit } from "./utils/ztoolkit";
 import { chat } from "./modules/chat";
+import { initPreferencesPane } from "./modules/preferences";
 
 async function onStartup() {
   await Promise.all([
@@ -12,6 +14,12 @@ async function onStartup() {
 
   initLocale();
   registerPrefs();
+  try {
+    await migrateLegacySecrets();
+  } catch (error) {
+    ztoolkit.log("[Glossa] secret migration failed", error);
+  }
+  chat.init();
 
   await Promise.all(
     Zotero.getMainWindows().map((win) => onMainWindowLoad(win)),
@@ -31,13 +39,15 @@ async function onMainWindowUnload(win: Window) {
 }
 
 function onShutdown() {
-  for (const win of Zotero.getMainWindows()) {
-    chat.unregister(win);
-  }
+  chat.dispose();
   ztoolkit.unregisterAll();
   addon.data.alive = false;
   // @ts-expect-error runtime instance
   delete Zotero[addon.data.config.addonInstance];
+}
+
+async function onPrefsEvent(type: "load", data: { window: Window }) {
+  if (type === "load") initPreferencesPane(data.window);
 }
 
 function registerPrefs() {
@@ -46,6 +56,7 @@ function registerPrefs() {
     src: rootURI + "content/preferences.xhtml",
     label: getString("prefs-title"),
     image: `chrome://${config.addonRef}/content/icons/favicon.svg`,
+    stylesheets: [`chrome://${config.addonRef}/content/preferences.css`],
   });
 }
 
@@ -54,4 +65,5 @@ export default {
   onShutdown,
   onMainWindowLoad,
   onMainWindowUnload,
+  onPrefsEvent,
 };

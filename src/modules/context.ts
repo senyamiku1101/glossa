@@ -1,142 +1,233 @@
-import { getPref } from "../utils/prefs";
-import { asItem, selectedTabID } from "../utils/reader";
-import { cosine, embedTexts } from "./llm";
+import type { ResolvedConfig } from "../utils/config";
+import { asItem, getActiveReader } from "../utils/reader";
+import {
+  cosine,
+  interpolate,
+  splitText,
+  templateKeys,
+  type ContextPack,
+} from "../utils/text";
+import { canEmbed, embedTexts, embeddingIdentity } from "./llm";
 import { getPDFPlainText, getPDFSelection } from "./pdf";
 
-export type ContextPack = {
-  input: string;
-  selection: string;
-  abstract: string;
-  title: string;
-  authors: string;
-  year: string;
-  related: string;
+/** What the user is looking at: metadata item plus the PDF to read from. */
+export type Target = {
+  /** Conversation key; one conversation per regular item. */
+  key: string;
+  label: string;
+  item?: Zotero.Item;
+  attachment?: Zotero.Item;
 };
 
-export { getPDFSelection };
+export type RenderedPrompt = {
+  /** Sent on the turn it was made for. */
+  prompt: string;
+  /** Resent on later turns, with retrieved excerpts left out. */
+  compact: string;
+};
 
-export async function collectContext(input: string): Promise<ContextPack> {
-  const item = getPrimaryItem();
-  const selection = getPDFSelection();
-  const abstract = String(item?.getField("abstractNote") || "");
-  const title = String(item?.getDisplayTitle() || "");
-  const year = String(item?.getField("year") || "");
-  const authors = (item?.getCreators() || [])
-    .map((c) => `${c.firstName || ""} ${c.lastName || ""}`.trim())
-    .filter(Boolean)
-    .join(", ");
-
-  let related = "";
-  try {
-    related = await getRelatedText(input || selection || title);
-  } catch (error) {
-    ztoolkit.log("[Glossa] related text failed", error);
+/**
+ * The reader tab wins over the library selection: while a PDF is open the
+ * items list keeps whatever was selected before, which is often a
+ * different paper.
+ */
+export function getActiveTarget(): Target {
+  const reader = getActiveReader();
+  if (reader?.itemID) {
+    const attachment = asItem(Zotero.Items.get(reader.itemID));
+    if (attachment)
+      return makeTarget(attachment.parentItem || attachment, attachment);
   }
-
-  return {
-    input,
-    selection,
-    abstract,
-    title,
-    authors,
-    year,
-    related,
-  };
-}
-
-export function interpolate(template: string, pack: ContextPack) {
-  return template.replace(
-    /\{\{\s*(input|selection|abstract|title|authors|year|related)\s*\}\}/g,
-    (_match, key: keyof ContextPack) => pack[key] || "",
-  );
-}
-
-function getPrimaryItem(): Zotero.Item | undefined {
+  let selected: Zotero.Item[] = [];
   try {
-    const selected = Zotero.getActiveZoteroPane()?.getSelectedItems?.() || [];
-    if (selected[0]) {
-      return selected[0].isAttachment()
-        ? selected[0].parentItem || selected[0]
-        : selected[0];
-    }
+    selected = Zotero.getActiveZoteroPane()?.getSelectedItems?.() || [];
   } catch {
     // pane may be unavailable
   }
-  try {
-    const reader = Zotero.Reader.getByTabID(selectedTabID());
-    if (reader?.itemID) {
-      const attachment = asItem(Zotero.Items.get(reader.itemID));
-      return attachment?.parentItem || attachment;
-    }
-  } catch {
-    // not in reader
-  }
-  return undefined;
+  const first = selected[0];
+  if (first?.isAttachment())
+    return makeTarget(first.parentItem || first, first);
+  if (first) return makeTarget(first);
+  return { key: "none", label: "" };
 }
 
-async function getRelatedText(query: string): Promise<string> {
-  const chunks = await collectChunks();
-  if (!chunks.length) return "";
-  const k = Math.max(1, Number(getPref("relatedNumber") || 5));
+function makeTarget(item: Zotero.Item, attachment?: Zotero.Item): Target {
+  return {
+    key: `${item.libraryID}/${item.key}`,
+    label: item.getDisplayTitle(),
+    item,
+    attachment,
+  };
+}
+
+export async function renderTemplate(
+  template: string,
+  input: string,
+  target: Target,
+  config: ResolvedConfig,
+): Promise<RenderedPrompt> {
+  const pack = await collectContext(template, input, target, config);
+  return {
+    prompt: interpolate(template, pack).trim(),
+    compact: interpolate(template, {
+      ...pack,
+      related: pack.related ? "(excerpts omitted)" : "",
+    }).trim(),
+  };
+}
+
+async function collectContext(
+  template: string,
+  input: string,
+  target: Target,
+  config: ResolvedConfig,
+): Promise<ContextPack> {
+  const { item } = target;
+  const selection = getPDFSelection();
+  const pack: ContextPack = {
+    input,
+    selection,
+    abstract: String(item?.getField("abstractNote") || ""),
+    title: String(item?.getDisplayTitle() || ""),
+    authors: (item?.getCreators() || [])
+      .map((c) => `${c.firstName || ""} ${c.lastName || ""}`.trim())
+      .filter(Boolean)
+      .join(", "),
+    year: getYear(item),
+    related: "",
+  };
+
+  // Retrieval extracts the PDF and calls the embeddings API; only pay for
+  // it when the template will show the result.
+  if (templateKeys(template).has("related")) {
+    try {
+      pack.related = await getRelatedText(
+        target,
+        input || selection || pack.title,
+        selection,
+        config,
+      );
+    } catch (error) {
+      ztoolkit.log("[Glossa] related text failed", error);
+    }
+  }
+  return pack;
+}
+
+/** "year" is not an item field; it is the first part of the parsed date. */
+function getYear(item?: Zotero.Item) {
+  const year = String(item?.getField("date", true, true) || "").slice(0, 4);
+  return /^\d{4}$/.test(year) && year !== "0000" ? year : "";
+}
+
+type DocIndex = {
+  chunks: string[];
+  vectors?: Float32Array[];
+  vectorKey?: string;
+};
+
+/** Enough for a book-length PDF; beyond this the tail is not indexed. */
+const MAX_CHUNKS = 400;
+const MAX_CACHED_DOCS = 12;
+const indexCache = new Map<string, DocIndex>();
+
+async function getRelatedText(
+  target: Target,
+  query: string,
+  selection: string,
+  config: ResolvedConfig,
+): Promise<string> {
+  const index =
+    selection.length > 40
+      ? { chunks: splitText(selection) }
+      : await getDocIndex(target);
+  if (!index?.chunks.length) return "";
+  const { chunks } = index;
+  const k = Math.max(1, config.relatedNumber);
   if (chunks.length <= k || !query.trim()) {
     return formatChunks(chunks.slice(0, k));
   }
 
-  try {
-    const vectors = await embedTexts([query, ...chunks]);
-    const qVec = vectors[0];
-    const ranked = chunks
-      .map((text, i) => ({ text, score: cosine(qVec, vectors[i + 1] || []) }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, k);
-    return formatChunks(ranked.map((row) => row.text));
-  } catch (error) {
-    ztoolkit.log("[Glossa] embedding ranking failed, using keywords", error);
-    const words = query
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((word) => word.length > 3);
-    const ranked = chunks
-      .map((text) => ({
-        text,
-        score: words.filter((word) => text.toLowerCase().includes(word)).length,
-      }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, k);
-    return formatChunks(ranked.map((row) => row.text));
+  if (canEmbed(config)) {
+    try {
+      const vectors = await ensureVectors(index, config);
+      const [qVec] = await embedTexts(config, [query]);
+      const ranked = chunks
+        .map((text, i) => ({ text, score: cosine(qVec, vectors[i] || []) }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, k);
+      return formatChunks(ranked.map((row) => row.text));
+    } catch (error) {
+      ztoolkit.log("[Glossa] embedding ranking failed, using keywords", error);
+    }
   }
+  return formatChunks(rankByKeywords(chunks, query, k));
 }
 
-async function collectChunks(): Promise<string[]> {
-  const selection = getPDFSelection();
-  if (selection.length > 40) return splitText(selection);
-
-  const item = getPrimaryItem();
-  if (!item) return [];
-
-  const abstract = String(item.getField("abstractNote") || "");
-  const attachment = item.isPDFAttachment()
-    ? item
-    : item
-        .getAttachments()
-        .map((id) => asItem(Zotero.Items.get(id)))
-        .find((att) => att?.isPDFAttachment());
-
-  if (attachment) {
-    const pdfText = await getPDFPlainText(attachment);
-    if (pdfText.trim()) return splitText(pdfText);
-  }
-  if (abstract) return splitText(abstract);
-  return [];
+function rankByKeywords(chunks: string[], query: string, k: number) {
+  const words = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((word) => word.length > 3);
+  return chunks
+    .map((text) => ({
+      text,
+      score: words.filter((word) => text.toLowerCase().includes(word)).length,
+    }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, k)
+    .map((row) => row.text);
 }
 
-export function splitText(text: string) {
-  return text
-    .replace(/\r/g, "\n")
-    .split(/\n{2,}/)
-    .map((part) => part.replace(/\s+/g, " ").trim())
-    .filter((part) => part.length > 40)
-    .slice(0, 80);
+/** Chunks of the target's PDF, extracted once per file version. */
+async function getDocIndex(target: Target): Promise<DocIndex | undefined> {
+  const attachment = target.attachment || findPDFAttachment(target.item);
+  if (attachment?.isPDFAttachment()) {
+    const mtime = await attachment.attachmentModificationTime;
+    const cacheKey = `${attachment.libraryID}/${attachment.key}@${mtime ?? 0}`;
+    const hit = indexCache.get(cacheKey);
+    if (hit) {
+      // refresh LRU position
+      indexCache.delete(cacheKey);
+      indexCache.set(cacheKey, hit);
+      return hit;
+    }
+    const text = await getPDFPlainText(attachment);
+    if (text.trim()) {
+      const all = splitText(text);
+      if (all.length > MAX_CHUNKS) {
+        ztoolkit.log(
+          `[Glossa] indexing first ${MAX_CHUNKS} of ${all.length} chunks`,
+        );
+      }
+      const index: DocIndex = { chunks: all.slice(0, MAX_CHUNKS) };
+      indexCache.set(cacheKey, index);
+      if (indexCache.size > MAX_CACHED_DOCS) {
+        indexCache.delete(indexCache.keys().next().value!);
+      }
+      return index;
+    }
+  }
+  const abstract = String(target.item?.getField("abstractNote") || "");
+  return abstract ? { chunks: splitText(abstract) } : undefined;
+}
+
+function findPDFAttachment(item?: Zotero.Item) {
+  if (!item || item.isAttachment()) return undefined;
+  return item
+    .getAttachments()
+    .map((id) => asItem(Zotero.Items.get(id)))
+    .find((att) => att?.isPDFAttachment());
+}
+
+/** Chunk vectors are computed once per document and embedding model. */
+async function ensureVectors(index: DocIndex, config: ResolvedConfig) {
+  const vectorKey = embeddingIdentity(config);
+  if (index.vectors && index.vectorKey === vectorKey) return index.vectors;
+  const raw = await embedTexts(config, index.chunks);
+  index.vectors = raw.map((vector) => Float32Array.from(vector));
+  index.vectorKey = vectorKey;
+  return index.vectors;
 }
 
 function formatChunks(chunks: string[]) {

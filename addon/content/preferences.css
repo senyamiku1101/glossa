@@ -1,0 +1,300 @@
+/* Glossa settings pane. Colours use Zotero 7 theme variables with fallbacks. */
+.glossa-prefs {
+  --glossa-border: var(--material-panedivider, #d0d0d0);
+  --glossa-muted: var(--fill-secondary, #666);
+  --glossa-soft: var(--fill-quinary, rgba(0, 0, 0, 0.05));
+  --glossa-accent: var(--color-accent, #2e7bcf);
+  --glossa-ok: #1a7f37;
+  --glossa-warn: #9a6700;
+  --glossa-bad: #c0392b;
+}
+
+@media (prefers-color-scheme: dark) {
+  .glossa-prefs {
+    --glossa-ok: #56d364;
+    --glossa-warn: #e3b341;
+    --glossa-bad: #ff8a80;
+  }
+}
+
+.glossa-prefs [hidden] {
+  display: none !important;
+}
+
+.glossa-layout {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.glossa-profiles {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 150px;
+  min-width: 0;
+  border: 1px solid var(--glossa-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.glossa-profile-save,
+.glossa-profile-test {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  padding: 8px;
+  background: var(--glossa-soft);
+}
+
+.glossa-profile-list {
+  flex: 1;
+  min-height: 120px;
+  padding: 6px;
+  overflow: auto;
+}
+
+.glossa-profile {
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+}
+
+.glossa-profile.glossa-active {
+  background: var(--glossa-accent);
+  color: #fff;
+}
+
+.glossa-profile-name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 6px 8px;
+  overflow: hidden;
+  text-align: start;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: inherit;
+  background: none;
+  border: none;
+}
+
+.glossa-profile-more {
+  margin: 0;
+  padding: 2px 6px;
+  color: inherit;
+  background: none;
+  border: none;
+}
+
+.glossa-empty {
+  padding: 6px;
+  color: var(--glossa-muted);
+}
+
+.glossa-config {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--glossa-border);
+  border-radius: 8px;
+}
+
+.glossa-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px 0;
+  border-bottom: 1px solid var(--glossa-border);
+}
+
+.glossa-tab {
+  margin: 0 0 -1px;
+  padding: 6px 10px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+}
+
+.glossa-tab[aria-selected="true"] {
+  color: var(--glossa-accent);
+  border-bottom-color: var(--glossa-accent);
+}
+
+.glossa-tabpanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.glossa-row {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.glossa-row-top {
+  align-items: start;
+}
+
+.glossa-span {
+  grid-column: 1 / -1;
+}
+
+.glossa-field {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.glossa-field > input[type="text"],
+.glossa-field > input[type="password"],
+.glossa-field > input[type="range"],
+.glossa-field > select {
+  flex: 1;
+  min-width: 0;
+}
+
+.glossa-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.glossa-prefs textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  font: inherit;
+}
+
+.glossa-code {
+  font-family: ui-monospace, monospace !important;
+  font-size: 12px !important;
+}
+
+.glossa-number {
+  width: 7em;
+}
+
+.glossa-value {
+  min-width: 3em;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.glossa-check,
+.glossa-switch {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.glossa-icon-button {
+  min-width: 0;
+  padding-inline: 8px;
+}
+
+.glossa-final-url {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  color: var(--glossa-muted);
+}
+
+.glossa-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--glossa-muted);
+}
+
+.glossa-hint:empty,
+.glossa-error:empty {
+  display: none;
+}
+
+.glossa-error {
+  font-size: 12px;
+  color: var(--glossa-bad);
+}
+
+.glossa-advanced summary {
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.glossa-advanced[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.glossa-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.glossa-spacer {
+  flex: 1;
+}
+
+.glossa-test {
+  margin-top: 12px;
+}
+
+.glossa-test-output {
+  min-height: 3em;
+  max-height: 260px;
+  margin-bottom: 6px;
+  padding: 8px;
+  overflow: auto;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  background: var(--glossa-soft);
+  border-radius: 6px;
+}
+
+.glossa-line {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.glossa-line-request {
+  color: var(--glossa-muted);
+}
+
+.glossa-line-ok {
+  color: var(--glossa-ok);
+}
+
+.glossa-line-warn {
+  color: var(--glossa-warn);
+}
+
+.glossa-line-error {
+  color: var(--glossa-bad);
+}
+
+.glossa-results {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.glossa-results th,
+.glossa-results td {
+  padding: 3px 6px;
+  text-align: start;
+  border-bottom: 1px solid var(--glossa-border);
+}
+
+.glossa-tag-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--glossa-border);
+}

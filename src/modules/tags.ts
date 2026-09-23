@@ -1,5 +1,5 @@
-import { getPref, setPref } from "../utils/prefs";
-import { collectContext, interpolate } from "./context";
+import { clearPref, getPref, setPref } from "../utils/prefs";
+import { sanitizeColor } from "../utils/text";
 
 export type CommandTag = {
   name: string;
@@ -57,23 +57,40 @@ Question:
   },
 ];
 
+/**
+ * An unset pref means "use the defaults"; "[]" means the user removed every
+ * tag and is respected.
+ */
 export function getTags(): CommandTag[] {
-  try {
-    const raw = String(getPref("tags") || "[]");
-    const parsed = JSON.parse(raw) as CommandTag[];
-    if (Array.isArray(parsed) && parsed.length) return parsed;
-  } catch {
-    // fall through
+  const raw = String(getPref("tags") || "").trim();
+  if (raw) {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.flatMap((value) => {
+          const tag = normalizeTag(value);
+          return tag ? [tag] : [];
+        });
+      }
+    } catch {
+      ztoolkit.log("[Glossa] tags pref is not valid JSON; using defaults");
+    }
   }
-  saveTags(DEFAULT_TAGS);
-  return DEFAULT_TAGS;
+  return DEFAULT_TAGS.map((tag) => ({ ...tag }));
 }
 
 export function saveTags(tags: CommandTag[]) {
   setPref("tags", JSON.stringify(tags));
 }
 
-export async function renderTag(tag: CommandTag, input: string) {
-  const pack = await collectContext(input);
-  return interpolate(tag.template, pack).trim();
+export function resetTags() {
+  clearPref("tags");
+}
+
+function normalizeTag(value: unknown): CommandTag | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const { name, color, template } = value as Record<string, unknown>;
+  if (typeof name !== "string" || !name.trim()) return undefined;
+  if (typeof template !== "string") return undefined;
+  return { name: name.trim(), color: sanitizeColor(color), template };
 }

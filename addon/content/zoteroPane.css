@@ -1,1 +1,194 @@
-/* Glossa pane styles are applied inline for the floating chat. */
+/*
+ * Glossa floating chat. Colours come from Zotero 7's theme variables so the
+ * panel follows light/dark mode; the fallbacks cover hosts without them.
+ */
+.glossa-panel {
+  --glossa-bg: var(--material-background, #fff);
+  --glossa-fg: var(--fill-primary, #111);
+  --glossa-muted: var(--fill-secondary, #666);
+  --glossa-border: var(--material-panedivider, #e5e5e5);
+  --glossa-user-bg: var(--fill-quinary, #f1f3f5);
+  --glossa-code-bg: var(--fill-quinary, #f4f4f4);
+  --glossa-error: #c0392b;
+
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  width: 440px;
+  max-height: 72vh;
+  overflow: hidden;
+  background: var(--glossa-bg);
+  color: var(--glossa-fg);
+  border: 1px solid var(--glossa-border);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .glossa-panel {
+    --glossa-bg: var(--material-background, #2b2b2b);
+    --glossa-fg: var(--fill-primary, #eee);
+    --glossa-muted: var(--fill-secondary, #aaa);
+    --glossa-border: var(--material-panedivider, #444);
+    --glossa-user-bg: var(--fill-quinary, #3a3a3a);
+    --glossa-code-bg: var(--fill-quinary, #1e1e1e);
+    --glossa-error: #ff8a80;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  }
+}
+
+.glossa-panel[hidden] {
+  display: none;
+}
+
+.glossa-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--glossa-border);
+}
+
+.glossa-title {
+  font-weight: 600;
+}
+
+.glossa-context {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--glossa-muted);
+  font-size: 12px;
+}
+
+.glossa-panel button {
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.glossa-new,
+.glossa-stop {
+  padding: 2px 10px;
+  color: var(--glossa-fg);
+  background: transparent;
+  border: 1px solid var(--glossa-border);
+  border-radius: 6px;
+}
+
+.glossa-new:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.glossa-transcript {
+  flex: 1;
+  min-height: 160px;
+  overflow: auto;
+  padding: 10px 12px;
+  line-height: 1.55;
+}
+
+.glossa-msg {
+  margin: 0 0 10px;
+  overflow-wrap: anywhere;
+}
+
+.glossa-msg > p {
+  margin: 0 0 0.6em;
+}
+
+.glossa-msg > p:last-child {
+  margin-bottom: 0;
+}
+
+.glossa-user {
+  margin-left: 15%;
+  padding: 6px 10px;
+  white-space: pre-wrap;
+  background: var(--glossa-user-bg);
+  border-radius: 10px;
+}
+
+/* Unanswered question: not kept in the conversation history. */
+.glossa-dropped {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.glossa-hint {
+  color: var(--glossa-muted);
+}
+
+.glossa-error {
+  color: var(--glossa-error);
+}
+
+.glossa-msg code {
+  padding: 0 3px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  background: var(--glossa-code-bg);
+  border-radius: 3px;
+}
+
+.glossa-msg pre {
+  padding: 8px;
+  overflow: auto;
+  background: var(--glossa-code-bg);
+  border-radius: 6px;
+}
+
+.glossa-msg pre code {
+  padding: 0;
+  background: none;
+}
+
+.glossa-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 12px 8px;
+}
+
+.glossa-tag {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 999px;
+}
+
+.glossa-busy .glossa-tag {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.glossa-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--glossa-border);
+}
+
+.glossa-composer textarea {
+  flex: 1;
+  min-height: 48px;
+  padding: 0;
+  resize: vertical;
+  color: var(--glossa-fg);
+  background: transparent;
+  border: none;
+  outline: none;
+  font: inherit;
+}
+
+.glossa-stop[hidden] {
+  display: none;
+}
