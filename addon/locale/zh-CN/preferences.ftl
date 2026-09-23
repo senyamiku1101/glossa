@@ -41,3 +41,4 @@ pref-test-copy = 复制结果
 pref-test-help = 帮助
 pref-key-note = API 密钥保存在 Zotero 的登录管理器里（在配置目录中加密存储），不写入 prefs.js。
 pref-license-note = Glossa 使用 AGPL-3.0。没有付费版，没有加密模块。仓库里的源码就是打进 xpi 的源码。
+pref-reader-popup = 在 PDF 划词弹窗中显示命令标签（模板里用到 {"{{selection}}"} 的标签）

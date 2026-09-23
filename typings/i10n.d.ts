@@ -3,6 +3,8 @@
 /* eslint-disable */
 // @ts-nocheck
 export type FluentMessageId =
+  | 'copied'
+  | 'copy'
   | 'embed-hint-anthropic'
   | 'embed-hint-derived'
   | 'empty-hint'
@@ -25,6 +27,8 @@ export type FluentMessageId =
   | 'new-chat-confirm'
   | 'no-context'
   | 'open-label'
+  | 'popup-busy'
+  | 'popup-saved'
   | 'pref-advanced'
   | 'pref-api-effort'
   | 'pref-api-key'
@@ -50,6 +54,7 @@ export type FluentMessageId =
   | 'pref-presets'
   | 'pref-profile-save'
   | 'pref-profile-test-all'
+  | 'pref-reader-popup'
   | 'pref-related'
   | 'pref-storage'
   | 'pref-storage-open'

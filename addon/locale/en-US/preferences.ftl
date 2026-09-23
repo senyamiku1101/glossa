@@ -41,3 +41,4 @@ pref-test-copy = Copy result
 pref-test-help = Help
 pref-key-note = API keys are kept in Zotero's login manager (encrypted in the profile), not in prefs.js.
 pref-license-note = Glossa is AGPL-3.0. There is no paid edition and no encrypted module. The source in this repository is the source that ships in the XPI.
+pref-reader-popup = Show command tags in the PDF text selection popup (tags whose template uses {"{{selection}}"})

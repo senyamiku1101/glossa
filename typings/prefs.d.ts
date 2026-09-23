@@ -28,6 +28,7 @@ declare namespace _ZoteroTypes {
       "chatNumber": number;
       "chatNumber.enabled": boolean;
       "chat.contextMode": string;
+      "reader.popup": boolean;
       "tags": string;
       "profiles": string;
       "profiles.active": string;

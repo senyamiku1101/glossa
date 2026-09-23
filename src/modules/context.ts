@@ -64,8 +64,17 @@ export async function renderTemplate(
   input: string,
   target: Target,
   config: ResolvedConfig,
+  /** The selection as captured by the caller (the reader's popup). */
+  selection?: string,
 ): Promise<RenderedPrompt> {
-  const pack = await collectContext(template, input, target, config, true);
+  const pack = await collectContext(
+    template,
+    input,
+    target,
+    config,
+    true,
+    selection,
+  );
   return {
     prompt: interpolate(template, pack).trim(),
     compact: interpolate(template, compactPack(pack)).trim(),
@@ -136,9 +145,10 @@ async function collectContext(
   target: Target,
   config: ResolvedConfig,
   selectionAsCorpus: boolean,
+  selectionOverride?: string,
 ): Promise<ContextPack> {
   const { item } = target;
-  const selection = getPDFSelection();
+  const selection = selectionOverride?.trim() || getPDFSelection();
   const pack: ContextPack = {
     input,
     selection,

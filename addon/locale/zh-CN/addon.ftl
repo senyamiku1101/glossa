@@ -68,3 +68,7 @@ mode-related = PDF 相关段落
 mode-fulltext = PDF 全文
 mode-abstract = 摘要
 tag-needs-input = 请先输入问题，再点击 { $name }。
+copy = 复制
+copied = 已复制。
+popup-busy = 还有一个回答正在生成，请等它完成后再试。
+popup-saved = 已同时保存到该条目的 Glossa 对话中。

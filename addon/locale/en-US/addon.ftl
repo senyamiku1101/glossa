@@ -68,3 +68,7 @@ mode-related = PDF: relevant passages
 mode-fulltext = PDF: full text
 mode-abstract = Abstract
 tag-needs-input = Type a question first, then click { $name } again.
+copy = Copy
+copied = Copied.
+popup-busy = Another answer is still being written. Try again when it is done.
+popup-saved = Also saved in this item's Glossa conversation.

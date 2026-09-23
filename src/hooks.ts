@@ -7,6 +7,10 @@ import { disposeChatViews, initChatViews } from "./modules/chatView";
 import { conversations } from "./modules/conversations";
 import { runner } from "./modules/runner";
 import { initPreferencesPane } from "./modules/preferences";
+import {
+  registerSelectionPopup,
+  unregisterSelectionPopup,
+} from "./modules/selectionPopup";
 import { registerSidebar, unregisterSidebar } from "./modules/sidebar";
 
 async function onStartup() {
@@ -27,6 +31,7 @@ async function onStartup() {
   initChatViews();
   chat.init();
   registerSidebar();
+  registerSelectionPopup();
 
   await Promise.all(
     Zotero.getMainWindows().map((win) => onMainWindowLoad(win)),
@@ -49,6 +54,7 @@ function onShutdown() {
   runner.stop();
   chat.dispose();
   unregisterSidebar();
+  unregisterSelectionPopup();
   disposeChatViews();
   conversations.dispose();
   ztoolkit.unregisterAll();
