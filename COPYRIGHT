@@ -1,0 +1,10 @@
+Glossa
+Copyright (C) 2026 Glossa contributors
+
+This program is free software under the GNU Affero General Public License
+version 3 or any later version. The complete license text is in LICENSE.
+
+The plugin skeleton follows windingwind/zotero-plugin-template
+(AGPL-3.0-or-later). Feature modules in src/modules are original Glossa work.
+There is no proprietary edition. This tree is the Corresponding Source for
+every published XPI.

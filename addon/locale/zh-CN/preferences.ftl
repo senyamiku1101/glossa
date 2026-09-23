@@ -1,0 +1,11 @@
+pref-chat = 对话模型
+pref-api-url = API 地址
+pref-api-key = API 密钥
+pref-api-model = 模型
+pref-api-temperature = 温度
+pref-embed = 向量模型（AskPDF 用）
+pref-embed-url = Embeddings 地址（可选）
+pref-embed-key = Embeddings 密钥（可选）
+pref-embed-model = Embeddings 模型
+pref-related = 相关段落数
+pref-license-note = Glossa 使用 AGPL-3.0。没有付费版，没有加密模块。仓库里的源码就是打进 xpi 的源码。

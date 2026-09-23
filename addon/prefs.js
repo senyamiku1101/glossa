@@ -1,0 +1,11 @@
+pref("enable", true);
+pref("api.url", "https://api.openai.com");
+pref("api.key", "");
+pref("api.model", "gpt-4o-mini");
+pref("api.temperature", "0.7");
+pref("embed.url", "");
+pref("embed.model", "text-embedding-3-small");
+pref("embed.key", "");
+pref("relatedNumber", 5);
+pref("chatNumber", 6);
+pref("tags", "[]");

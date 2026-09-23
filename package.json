@@ -1,0 +1,49 @@
+{
+  "name": "glossa",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Fully open-source AI assistant for Zotero. No paid modules, no encrypted payloads.",
+  "config": {
+    "addonName": "Glossa",
+    "addonID": "glossa@openzotero.org",
+    "addonRef": "glossa",
+    "addonInstance": "Glossa",
+    "prefsPrefix": "extensions.zotero.glossa"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openzotero/glossa.git"
+  },
+  "author": "Glossa contributors",
+  "bugs": {
+    "url": "https://github.com/openzotero/glossa/issues"
+  },
+  "homepage": "https://github.com/openzotero/glossa#readme",
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "start": "zotero-plugin serve",
+    "build": "zotero-plugin build && tsc --noEmit",
+    "lint:check": "prettier --check . && eslint .",
+    "lint:fix": "prettier --write . && eslint . --fix",
+    "release": "zotero-plugin release",
+    "test": "zotero-plugin test",
+    "check": "node scripts/check-logic.mjs"
+  },
+  "dependencies": {
+    "zotero-plugin-toolkit": "^5.1.0-beta.13"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "@zotero-plugin/eslint-config": "^0.6.7",
+    "eslint": "^9.39.2",
+    "prettier": "^3.7.4",
+    "typescript": "^5.9.3",
+    "zotero-plugin-scaffold": "^0.8.2",
+    "zotero-types": "^4.1.0-beta.4"
+  },
+  "prettier": {
+    "printWidth": 80,
+    "tabWidth": 2,
+    "endOfLine": "lf"
+  }
+}

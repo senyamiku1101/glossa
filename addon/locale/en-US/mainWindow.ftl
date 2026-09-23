@@ -1,0 +1,1 @@
+open-label = Open Glossa

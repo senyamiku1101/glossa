@@ -1,0 +1,11 @@
+pref-chat = Chat model
+pref-api-url = API URL
+pref-api-key = API key
+pref-api-model = Model
+pref-api-temperature = Temperature
+pref-embed = Embeddings (for AskPDF)
+pref-embed-url = Embeddings URL (optional)
+pref-embed-key = Embeddings key (optional)
+pref-embed-model = Embeddings model
+pref-related = Related snippets
+pref-license-note = Glossa is AGPL-3.0. There is no paid edition and no encrypted module. The source in this repository is the source that ships in the XPI.

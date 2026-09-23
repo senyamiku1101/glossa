@@ -1,0 +1,76 @@
+<linkset>
+  <html:link rel="localization" href="__addonRef__-preferences.ftl" />
+</linkset>
+<vbox id="__addonRef__-preferences" class="main-section">
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-chat"></html:h2></label>
+    <hbox align="center">
+      <html:label data-l10n-id="pref-api-url" for="__addonRef__-api-url"></html:label>
+      <html:input
+        id="__addonRef__-api-url"
+        type="text"
+        preference="api.url"
+      />
+    </hbox>
+    <hbox align="center">
+      <html:label data-l10n-id="pref-api-key" for="__addonRef__-api-key"></html:label>
+      <html:input
+        id="__addonRef__-api-key"
+        type="password"
+        preference="api.key"
+      />
+    </hbox>
+    <hbox align="center">
+      <html:label data-l10n-id="pref-api-model" for="__addonRef__-api-model"></html:label>
+      <html:input
+        id="__addonRef__-api-model"
+        type="text"
+        preference="api.model"
+      />
+    </hbox>
+    <hbox align="center">
+      <html:label data-l10n-id="pref-api-temperature" for="__addonRef__-api-temperature"></html:label>
+      <html:input
+        id="__addonRef__-api-temperature"
+        type="text"
+        preference="api.temperature"
+      />
+    </hbox>
+  </groupbox>
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-embed"></html:h2></label>
+    <hbox align="center">
+      <html:label data-l10n-id="pref-embed-url" for="__addonRef__-embed-url"></html:label>
+      <html:input
+        id="__addonRef__-embed-url"
+        type="text"
+        preference="embed.url"
+      />
+    </hbox>
+    <hbox align="center">
+      <html:label data-l10n-id="pref-embed-key" for="__addonRef__-embed-key"></html:label>
+      <html:input
+        id="__addonRef__-embed-key"
+        type="password"
+        preference="embed.key"
+      />
+    </hbox>
+    <hbox align="center">
+      <html:label data-l10n-id="pref-embed-model" for="__addonRef__-embed-model"></html:label>
+      <html:input
+        id="__addonRef__-embed-model"
+        type="text"
+        preference="embed.model"
+      />
+    </hbox>
+    <hbox align="center">
+      <html:label data-l10n-id="pref-related" for="__addonRef__-related"></html:label>
+      <html:input
+        id="__addonRef__-related"
+        type="number"
+        preference="relatedNumber"
+      />
+    </hbox>
+  </groupbox>
+  <html:p data-l10n-id="pref-license-note"></html:p>
+</vbox>
