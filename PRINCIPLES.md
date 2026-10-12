@@ -5,4 +5,4 @@
 3. **No encrypted payloads.** Do not add `*.enc` modules, license servers, device quotas, or `new Function` loaders for hidden code.
 4. **No `eval` in user tags.** Templates only interpolate `{{selection}}`, `{{abstract}}`, `{{related}}`, and similar fields.
 5. **Bring your own model.** Glossa never requires a vendor account of ours. Users point at any OpenAI-compatible API.
-6. **Ideas are free, blobs are not.** Behaviour may resemble other Zotero AI plugins. Source is not copied from proprietary XPIs.
+6. **Document provenance.** Record the origin and license of any reused code or asset. Do not ship another plugin's binary payload or unverified source.

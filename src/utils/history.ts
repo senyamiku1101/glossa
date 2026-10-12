@@ -16,6 +16,8 @@ export type Turn = {
   display?: string;
   /** Reasoning shown under an answer; kept in memory, never saved or resent. */
   reasoning?: string;
+  /** Local record of the user message sent with this turn, capped in size. */
+  source?: { text: string; truncated: boolean };
 };
 
 export const HISTORY_VERSION = 1;
@@ -61,9 +63,12 @@ export function serializeConversation(label: string, turns: Turn[]) {
       version: HISTORY_VERSION,
       label,
       updatedAt: new Date().toISOString(),
-      turns: turns.map(({ role, content, display }) =>
-        display === undefined ? { role, content } : { role, content, display },
-      ),
+      turns: turns.map(({ role, content, display, source }) => ({
+        role,
+        content,
+        ...(display === undefined ? {} : { display }),
+        ...(source === undefined ? {} : { source }),
+      })),
     },
     null,
     1,
@@ -84,10 +89,128 @@ export function parseConversation(raw: string): Turn[] | undefined {
   return data.turns.flatMap((turn: any): Turn[] => {
     if (turn?.role !== "user" && turn?.role !== "assistant") return [];
     if (typeof turn.content !== "string") return [];
+    const source =
+      turn.source &&
+      typeof turn.source.text === "string" &&
+      typeof turn.source.truncated === "boolean"
+        ? { text: turn.source.text, truncated: turn.source.truncated }
+        : undefined;
     return [
-      typeof turn.display === "string"
-        ? { role: turn.role, content: turn.content, display: turn.display }
-        : { role: turn.role, content: turn.content },
+      {
+        role: turn.role,
+        content: turn.content,
+        ...(typeof turn.display === "string" ? { display: turn.display } : {}),
+        ...(source ? { source } : {}),
+      },
     ];
   });
+}
+
+/** Version 2 keeps multiple named sessions in the item's existing JSON file. */
+export type SessionRecord = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  turns: Turn[];
+};
+export type SessionFile = {
+  activeId: string;
+  sessions: SessionRecord[];
+  migrated?: boolean;
+};
+
+export function sessionTitle(turns: Turn[]) {
+  const first = turns.find((turn) => turn.role === "user");
+  return (first?.display ?? first?.content ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 72);
+}
+
+export function parseSessionFile(raw: string): SessionFile | undefined {
+  let data: any;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  if (!data || typeof data !== "object") return undefined;
+  const date = (value: unknown) =>
+    typeof value === "string" && Number.isFinite(Date.parse(value))
+      ? new Date(value).toISOString()
+      : new Date(0).toISOString();
+  if (
+    data.version === 1 ||
+    (data.version === undefined && Array.isArray(data.turns))
+  ) {
+    const turns = parseConversation(raw);
+    if (!turns || turns.length !== data.turns.length) return undefined;
+    return {
+      activeId: "legacy",
+      sessions: [
+        {
+          id: "legacy",
+          title: sessionTitle(turns),
+          createdAt: date(data.updatedAt),
+          updatedAt: date(data.updatedAt),
+          turns,
+        },
+      ],
+      migrated: true,
+    };
+  }
+  if (
+    data.version !== 2 ||
+    !Array.isArray(data.sessions) ||
+    !data.sessions.length
+  )
+    return undefined;
+  const ids = new Set<string>();
+  const sessions: SessionRecord[] = [];
+  for (const entry of data.sessions) {
+    if (
+      !entry ||
+      typeof entry.id !== "string" ||
+      !/^[A-Za-z0-9_-]+$/.test(entry.id) ||
+      ids.has(entry.id) ||
+      typeof entry.title !== "string" ||
+      !Array.isArray(entry.turns)
+    )
+      return undefined;
+    const turns = parseConversation(JSON.stringify({ turns: entry.turns }));
+    if (!turns || turns.length !== entry.turns.length) return undefined;
+    ids.add(entry.id);
+    sessions.push({
+      id: entry.id,
+      title: entry.title.slice(0, 120),
+      createdAt: date(entry.createdAt),
+      updatedAt: date(entry.updatedAt),
+      turns,
+    });
+  }
+  return {
+    activeId: ids.has(data.activeId) ? data.activeId : sessions[0].id,
+    sessions,
+  };
+}
+
+export function serializeSessionFile(label: string, data: SessionFile) {
+  return JSON.stringify(
+    {
+      version: 2,
+      label,
+      activeId: data.activeId,
+      sessions: data.sessions.map((session) => ({
+        id: session.id,
+        title: session.title,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+        // Share the existing rule: reasoning and runtime state never reach disk.
+        turns: JSON.parse(serializeConversation(label, session.turns)).turns,
+      })),
+    },
+    null,
+    1,
+  );
 }

@@ -14,7 +14,13 @@ export default defineConfig({
     "https://github.com/{{owner}}/{{repo}}/releases/download/v{{version}}/{{xpiName}}.xpi",
 
   build: {
-    assets: ["addon/**/*.*"],
+    assets: [
+      "addon/**/*.*",
+      "addon/LICENSE",
+      "addon/source/LICENSE",
+      "addon/source/COPYRIGHT",
+      "addon/source/.env.example",
+    ],
     define: {
       ...pkg.config,
       author: pkg.author,

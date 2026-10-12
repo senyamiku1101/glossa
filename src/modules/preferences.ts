@@ -63,7 +63,6 @@ class PreferencesPane {
   }
 
   init() {
-    this.initTabs();
     this.bindPrefs();
     this.bindSecret("api-key", "api.key");
     this.bindSecret("embed-key", "embed.key");
@@ -86,23 +85,6 @@ class PreferencesPane {
 
   private el<T extends HTMLElement = HTMLElement>(id: string) {
     return this.doc.getElementById(`${ref}-${id}`) as T;
-  }
-
-  private initTabs() {
-    const tabs = [...this.root.querySelectorAll<HTMLElement>(".glossa-tab")];
-    const panels = [
-      ...this.root.querySelectorAll<HTMLElement>(".glossa-tabpanel"),
-    ];
-    const select = (name: string) => {
-      for (const tab of tabs) {
-        tab.setAttribute("aria-selected", String(tab.dataset.tab === name));
-      }
-      for (const panel of panels) panel.hidden = panel.dataset.panel !== name;
-    };
-    for (const tab of tabs) {
-      tab.addEventListener("click", () => select(tab.dataset.tab!));
-    }
-    select("chat");
   }
 
   // ---- pref binding
@@ -151,6 +133,14 @@ class PreferencesPane {
       }
       value = n;
     }
+    if (
+      key === "reader.popupScope" &&
+      value !== "selection" &&
+      value !== "paragraph"
+    ) {
+      this.sync(key);
+      return;
+    }
     if (control.dataset.validate === "json") {
       const error = this.el("api-extra-error");
       try {
@@ -162,11 +152,21 @@ class PreferencesPane {
       }
     }
     Zotero.Prefs.set(`${PREFIX}.${key}`, value, true);
+    // Changing the limit means the user wants it included in requests.
+    if (key === "api.maxTokens")
+      Zotero.Prefs.set(`${PREFIX}.api.maxTokens.enabled`, true, true);
   }
 
   private sync(key: string) {
     const value = Zotero.Prefs.get(`${PREFIX}.${key}`, true);
-    const text = value === undefined ? "" : String(value);
+    const text =
+      key === "reader.popupScope"
+        ? value === "paragraph"
+          ? "paragraph"
+          : "selection"
+        : value === undefined
+          ? ""
+          : String(value);
     for (const control of this.controls(key)) {
       if (isCheckbox(control)) control.checked = Boolean(value);
       else if (control.value !== text) control.value = text;

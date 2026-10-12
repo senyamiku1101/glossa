@@ -298,3 +298,248 @@
   padding: 8px 0;
   border-bottom: 1px solid var(--glossa-border);
 }
+
+/* Glossa research workspace layout */
+.glossa-prefs {
+  --glossa-accent: #276b5a;
+  --glossa-deep: #174c43;
+  --glossa-gold: #b8893e;
+  --glossa-surface: #fbfaf6;
+  --glossa-card: #fff;
+  --glossa-border: #dcded5;
+  --glossa-soft: #f1f4ee;
+  --glossa-muted: #66746e;
+  max-width: 1100px;
+  color: var(--fill-primary, #26332e);
+}
+.glossa-prefs > groupbox {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+}
+.glossa-prefs h2 {
+  margin: 2px 0 4px;
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+.glossa-intro {
+  margin: 0 0 24px;
+  color: var(--glossa-muted);
+  line-height: 1.5;
+}
+.glossa-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: stretch;
+}
+.glossa-profiles,
+.glossa-config,
+.glossa-test {
+  flex: auto;
+  min-width: 0;
+  overflow: visible;
+  border: 1px solid var(--glossa-border);
+  border-radius: 14px;
+  background: var(--glossa-card);
+  box-shadow: 0 2px 8px rgba(23, 76, 67, 0.035);
+}
+.glossa-profiles {
+  display: block;
+  padding: 20px 22px;
+}
+.glossa-section-heading {
+  margin-bottom: 20px;
+}
+.glossa-section-heading h3,
+.glossa-test h3 {
+  margin: 4px 0;
+  font-size: 18px;
+  font-weight: 650;
+  color: var(--glossa-deep);
+}
+.glossa-section-heading p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--glossa-muted);
+}
+.glossa-eyebrow {
+  display: block;
+  color: var(--glossa-accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+.glossa-profile-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.glossa-profile-save,
+.glossa-profile-test {
+  flex: none;
+  padding: 7px 12px;
+  border: 1px solid var(--glossa-border);
+  border-radius: 7px;
+  background: var(--glossa-surface);
+  color: var(--glossa-deep);
+}
+.glossa-profile-test {
+  margin-top: 12px;
+  padding: 5px 8px;
+  background: transparent;
+  color: var(--glossa-accent);
+}
+.glossa-profile-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 0;
+  padding: 0;
+  overflow: visible;
+}
+.glossa-profile {
+  max-width: 220px;
+  overflow: hidden;
+  border: 1px solid var(--glossa-border);
+  border-radius: 8px;
+  background: var(--glossa-surface);
+}
+.glossa-profile.glossa-active {
+  color: #fff;
+  border-color: var(--glossa-deep);
+  background: var(--glossa-deep);
+}
+.glossa-profile-name {
+  padding: 8px 12px;
+}
+.glossa-profile-more {
+  padding: 6px 9px;
+}
+.glossa-config {
+  display: block;
+}
+.glossa-tabpanel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 22px;
+  border-bottom: 1px solid var(--glossa-border);
+}
+.glossa-tabpanel:last-child {
+  border-bottom: 0;
+}
+.glossa-row {
+  grid-template-columns: minmax(120px, 175px) minmax(0, 1fr);
+  gap: 16px;
+  min-height: 32px;
+}
+.glossa-row > label,
+.glossa-row > .glossa-check {
+  color: var(--fill-primary, #26332e);
+  font-weight: 520;
+}
+.glossa-field {
+  gap: 8px;
+}
+.glossa-prefs input[type="text"],
+.glossa-prefs input[type="password"],
+.glossa-prefs input[type="number"],
+.glossa-prefs select,
+.glossa-prefs textarea {
+  box-sizing: border-box;
+  min-height: 32px;
+  padding: 6px 9px;
+  border: 1px solid var(--glossa-border);
+  border-radius: 7px;
+  background: var(--glossa-card);
+  color: inherit;
+}
+.glossa-prefs input:focus-visible,
+.glossa-prefs select:focus-visible,
+.glossa-prefs textarea:focus-visible,
+.glossa-prefs button:focus-visible {
+  outline: 2px solid var(--glossa-accent);
+  outline-offset: 2px;
+}
+.glossa-prefs input[type="range"] {
+  accent-color: var(--glossa-accent);
+}
+.glossa-prefs input[type="checkbox"] {
+  accent-color: var(--glossa-accent);
+}
+.glossa-prefs button {
+  cursor: pointer;
+}
+.glossa-prefs button:hover:not(:disabled) {
+  border-color: var(--glossa-accent);
+}
+.glossa-advanced {
+  margin-top: 5px;
+  padding: 10px 12px;
+  border: 1px solid var(--glossa-border);
+  border-radius: 9px;
+  background: var(--glossa-surface);
+}
+.glossa-advanced summary {
+  color: var(--glossa-deep);
+  font-weight: 600;
+}
+.glossa-test {
+  box-sizing: border-box;
+  padding: 20px 22px;
+}
+.glossa-test-output {
+  min-height: 48px;
+  padding: 12px;
+  border: 1px solid var(--glossa-border);
+  background: var(--glossa-surface);
+}
+.glossa-primary {
+  padding: 6px 18px;
+  border: 1px solid var(--glossa-deep);
+  border-radius: 7px;
+  color: #fff;
+  background: var(--glossa-deep);
+}
+.glossa-prefs > groupbox > .glossa-hint {
+  margin-top: 12px;
+}
+@media (max-width: 650px) {
+  .glossa-profiles,
+  .glossa-tabpanel,
+  .glossa-test {
+    padding: 16px;
+  }
+  .glossa-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+  }
+  .glossa-profile-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .glossa-field {
+    flex-wrap: wrap;
+  }
+}
+@media (prefers-color-scheme: dark) {
+  .glossa-prefs {
+    --glossa-accent: #8fd0b8;
+    --glossa-deep: #a9dfcb;
+    --glossa-card: #252d2a;
+    --glossa-surface: #202724;
+    --glossa-border: #49574e;
+    --glossa-soft: #303c35;
+    --glossa-muted: #a8b6ad;
+  }
+  .glossa-profile.glossa-active,
+  .glossa-primary {
+    color: #10231b;
+    background: #a9dfcb;
+  }
+}

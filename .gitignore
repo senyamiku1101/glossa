@@ -8,3 +8,5 @@ tsconfig.tsbuildinfo
 build
 logs
 .npm-cache
+addon/source/
+releases/

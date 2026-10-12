@@ -4,7 +4,7 @@ import { getActiveTarget } from "./context";
 
 const PANEL_ID = `${config.addonRef}-panel`;
 const STYLESHEET_ID = `${config.addonRef}-stylesheet`;
-const MENU_ID = `${config.addonRef}-tools-menu`;
+const LEGACY_MENU_ID = `${config.addonRef}-tools-menu`;
 
 /**
  * The floating chat panel (Ctrl+/). It follows whatever the user is looking
@@ -38,13 +38,13 @@ export class ChatController {
   register(win: _ZoteroTypes.MainWindow) {
     this.bindKeyboard();
     this.ensureStylesheet(win);
-    this.ensureToolsMenu(win);
+    win.document.getElementById(LEGACY_MENU_ID)?.remove();
   }
 
   unregister(win: Window) {
     this.views.get(win)?.dispose();
     this.views.delete(win);
-    for (const id of [PANEL_ID, STYLESHEET_ID, MENU_ID]) {
+    for (const id of [PANEL_ID, STYLESHEET_ID, LEGACY_MENU_ID]) {
       win.document.getElementById(id)?.remove();
     }
   }
@@ -95,22 +95,6 @@ export class ChatController {
         },
       },
       doc.documentElement as Element,
-    );
-  }
-
-  private ensureToolsMenu(win: _ZoteroTypes.MainWindow) {
-    const doc = win.document;
-    if (doc.getElementById(MENU_ID)) return;
-    const popup = doc.getElementById("menu_ToolsPopup");
-    if (!popup) return;
-    ztoolkit.UI.appendElement(
-      {
-        tag: "menuitem",
-        id: MENU_ID,
-        attributes: { label: "Glossa" },
-        listeners: [{ type: "command", listener: () => this.toggle(win) }],
-      },
-      popup as HTMLElement,
     );
   }
 

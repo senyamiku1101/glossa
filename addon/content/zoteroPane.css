@@ -82,31 +82,16 @@
 
 .glossa-header {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 6px 8px;
-  padding: 8px 12px;
+  min-width: 0;
+  gap: 6px;
+  padding: 7px 12px;
   border-bottom: 1px solid var(--glossa-border);
 }
 
 .glossa-title {
   font-weight: 600;
-}
-
-/*
- * A nowrap title would report its full length as the header's minimum
- * width and stretch the whole item pane; containment keeps it out of the
- * width calculation. In a narrow pane the controls wrap below it.
- */
-.glossa-context {
-  flex: 1 1 10em;
-  min-width: 0;
-  contain: inline-size;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  color: var(--glossa-muted);
-  font-size: 12px;
 }
 
 .glossa-chat button,
@@ -126,7 +111,12 @@
 
 .glossa-mode-select {
   min-width: 0;
-  max-width: 12em;
+  max-width: 14em;
+  padding: 4px 10px;
+  color: var(--glossa-fg);
+  background: var(--glossa-bg);
+  border: 1px solid var(--glossa-border);
+  border-radius: 999px;
 }
 
 .glossa-new {
@@ -149,11 +139,36 @@
 
 .glossa-transcript {
   flex: 1;
-  min-height: 120px;
+  min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
   padding: 10px 12px;
   line-height: 1.55;
+}
+
+/*
+ * Zotero's chrome document does not select text by default; every readable
+ * part of the transcript opts back in so answers can be highlighted and
+ * copied. Buttons and other controls stay unselectable below.
+ */
+.glossa-msg,
+.glossa-reasoning-body,
+.glossa-source-block,
+.glossa-quote-preview,
+.glossa-session-row,
+.glossa-history-paper,
+.glossa-session-current,
+.glossa-session-status {
+  -moz-user-select: text;
+  user-select: text;
+}
+
+.glossa-chat button,
+.glossa-chat select,
+.glossa-chat summary,
+.glossa-tag {
+  -moz-user-select: none;
+  user-select: none;
 }
 
 .glossa-msg {
@@ -343,22 +358,114 @@
 
 .glossa-composer {
   display: flex;
-  align-items: flex-end;
-  gap: 6px;
-  padding: 8px 12px;
-  border-top: 1px solid var(--glossa-border);
+  flex-direction: column;
+  gap: 0;
+  margin: 0 12px 12px;
+  overflow: hidden;
+  background: var(--glossa-bg);
+  border: 1px solid var(--glossa-border);
+  border-radius: 12px;
+}
+
+.glossa-quote {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--glossa-border);
+}
+
+.glossa-quote[hidden] {
+  display: none !important;
+}
+
+.glossa-quote-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--color-accent, #7c6cf6);
+  background: var(--glossa-user-bg);
+  border-radius: 8px;
+}
+
+.glossa-quote-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.glossa-quote-meta {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--glossa-fg);
+}
+
+.glossa-quote-preview {
+  overflow: hidden;
+  color: var(--glossa-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.glossa-quote-clear {
+  flex: none;
+  padding: 0 4px;
+  color: var(--glossa-muted);
+  background: none;
+  border: none;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.glossa-quote-clear:hover {
+  color: var(--glossa-fg);
 }
 
 .glossa-composer textarea {
-  flex: 1;
-  min-height: 48px;
-  padding: 0;
-  resize: vertical;
+  min-height: 44px;
+  padding: 10px 12px 4px;
+  resize: none;
   color: var(--glossa-fg);
   background: transparent;
   border: none;
   outline: none;
   font: inherit;
+}
+
+.glossa-composer-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px 8px;
+}
+
+.glossa-send {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-left: auto;
+  color: #fff;
+  background: var(--color-accent, #8b7cf6);
+  border: none;
+  border-radius: 50%;
+}
+
+.glossa-send:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.glossa-send svg {
+  display: block;
+}
+
+.glossa-stop {
+  margin-left: auto;
 }
 
 /* ---- item pane section; sidebar.ts sets the height to fit the pane */
@@ -375,4 +482,495 @@
 .glossa-composer textarea.glossa-needs-input::placeholder {
   color: var(--glossa-error);
   opacity: 1;
+}
+
+/* Research notebook theme */
+.glossa-panel,
+.glossa-chat {
+  --glossa-bg: var(--material-background, #fbfaf6);
+  --glossa-fg: var(--fill-primary, #26332e);
+  --glossa-muted: var(--fill-secondary, #687870);
+  --glossa-border: #dbe1d9;
+  --glossa-paper: #fff;
+  --glossa-tint: #eff4ed;
+  --glossa-accent: #276b5a;
+}
+.glossa-panel {
+  border-color: var(--glossa-border);
+  border-radius: 14px;
+}
+.glossa-chat {
+  background: var(--glossa-bg);
+  font-size: 13px;
+}
+.glossa-header {
+  min-height: 44px;
+  gap: 5px;
+  padding: 6px 10px;
+  background: var(--glossa-paper);
+  border-bottom: 1px solid var(--glossa-border);
+}
+.glossa-title {
+  flex: none;
+  color: var(--glossa-accent);
+  font-size: 14px;
+  letter-spacing: -0.02em;
+}
+.glossa-profile-select,
+.glossa-new,
+.glossa-stop {
+  padding: 4px 7px;
+  border: 1px solid var(--glossa-border);
+  border-radius: 6px;
+  background: var(--glossa-paper);
+  color: var(--glossa-fg);
+}
+.glossa-profile-select {
+  flex: none;
+  max-width: 7.5em;
+  margin-left: 0;
+}
+.glossa-transcript {
+  padding: 16px 14px 20px;
+  line-height: 1.6;
+}
+.glossa-user {
+  margin: 4px 0 7px;
+  padding: 0 0 0 11px;
+  border-left: 3px solid var(--glossa-accent);
+  border-radius: 0;
+  background: none;
+  font-weight: 600;
+}
+.glossa-user::before {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--glossa-accent);
+  content: "Q";
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+.glossa-answer-card {
+  margin: 0 0 22px;
+  padding: 13px 14px 8px;
+  border: 1px solid var(--glossa-border);
+  border-radius: 10px;
+  background: var(--glossa-paper);
+  box-shadow: 0 2px 8px rgba(29, 70, 52, 0.035);
+}
+.glossa-answer-label {
+  margin-bottom: 9px;
+  color: var(--glossa-accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+}
+.glossa-answer-card .glossa-msg {
+  margin-bottom: 0;
+}
+.glossa-source-block {
+  margin: 0 0 12px 11px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  background: var(--glossa-tint);
+  color: var(--glossa-muted);
+  font-size: 11px;
+}
+.glossa-source-block summary {
+  cursor: pointer;
+  color: var(--glossa-accent);
+  font-weight: 600;
+}
+.glossa-source-help {
+  margin: 8px 0;
+  line-height: 1.4;
+}
+.glossa-source-block pre {
+  max-height: 260px;
+  margin: 6px 0 0;
+  padding: 9px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--glossa-border);
+  border-radius: 6px;
+  background: var(--glossa-paper);
+  color: var(--glossa-fg);
+  font-size: 11px;
+}
+.glossa-reasoning {
+  margin: 0 0 8px 11px;
+  padding-left: 8px;
+  border-left: 2px solid var(--glossa-border);
+}
+.glossa-tags {
+  gap: 6px;
+  padding: 4px 14px 9px;
+}
+.glossa-tag {
+  padding: 5px 9px;
+  border: 1px solid var(--glossa-border);
+  border-radius: 6px;
+  font-weight: 600;
+}
+.glossa-composer {
+  margin: 0 14px 14px;
+  border-color: var(--glossa-border);
+  border-radius: 9px;
+  background: var(--glossa-paper);
+}
+.glossa-composer:focus-within {
+  border-color: var(--glossa-accent);
+  box-shadow: 0 0 0 2px rgba(39, 107, 90, 0.12);
+}
+.glossa-mode-select {
+  border-radius: 6px;
+  background: var(--glossa-tint);
+}
+.glossa-send {
+  background: var(--glossa-accent);
+  border-radius: 7px;
+}
+.glossa-quote-icon {
+  color: var(--glossa-accent);
+  background: var(--glossa-tint);
+}
+.glossa-in-pane {
+  border-color: var(--glossa-border);
+  border-radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  .glossa-panel,
+  .glossa-chat {
+    --glossa-bg: var(--material-background, #202724);
+    --glossa-fg: var(--fill-primary, #e7eee9);
+    --glossa-muted: var(--fill-secondary, #a7b7ad);
+    --glossa-border: #45584e;
+    --glossa-paper: #27322c;
+    --glossa-tint: #304139;
+    --glossa-accent: #9bd3b6;
+  }
+  .glossa-send {
+    color: #153126;
+  }
+}
+
+/* Focused item pane: only the transcript scrolls; other native sections remain
+   available from the sidenav. Scope is local to the selected item container. */
+item-details.glossa-workspace-active item-pane-header {
+  display: none !important;
+}
+.glossa-pane-viewport {
+  --min-scroll-height: 0px !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  scroll-behavior: auto !important;
+}
+.glossa-pane-viewport > :not(.glossa-pane-host) {
+  display: none !important;
+}
+.glossa-pane-viewport > .glossa-pane-host:not([hidden]),
+.glossa-pane-viewport .glossa-pane-host > collapsible-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  overflow: hidden;
+}
+.glossa-pane-viewport .glossa-pane-host > collapsible-section > .head {
+  display: none !important;
+}
+.glossa-pane-viewport .glossa-pane-body {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: hidden;
+}
+.glossa-pane-viewport .glossa-in-pane {
+  max-height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+.glossa-chat {
+  min-height: 0;
+}
+.glossa-header,
+.glossa-session-status,
+.glossa-tags,
+.glossa-composer {
+  flex-shrink: 0;
+}
+.glossa-session-current {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--glossa-fg);
+  font-size: 12px;
+  font-weight: 600;
+}
+.glossa-icon-button {
+  box-sizing: border-box;
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-left: 0;
+  padding: 0;
+  color: var(--glossa-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+}
+.glossa-icon-button:hover:not(:disabled),
+.glossa-icon-button[aria-expanded="true"] {
+  color: var(--glossa-fg);
+  background: var(--glossa-tint);
+}
+.glossa-icon-button svg {
+  display: block;
+}
+.glossa-history-open .glossa-header,
+.glossa-history-open .glossa-transcript,
+.glossa-history-open .glossa-tags,
+.glossa-history-open .glossa-composer {
+  display: none !important;
+}
+.glossa-session-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--glossa-paper);
+}
+.glossa-history-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  min-height: 52px;
+  padding: 7px 12px 7px 16px;
+  border-bottom: 1px solid var(--glossa-border);
+}
+.glossa-history-title {
+  flex: 1;
+  color: var(--glossa-fg);
+  font-size: 16px;
+  font-weight: 600;
+}
+.glossa-history-search {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 9px;
+  margin: 14px 14px 9px;
+  padding: 0 11px;
+  height: 38px;
+  border: 1px solid var(--glossa-border);
+  border-radius: 9px;
+  background: var(--glossa-bg);
+  color: var(--glossa-muted);
+}
+.glossa-history-search:focus-within {
+  border-color: var(--glossa-muted);
+  box-shadow: 0 0 0 1px var(--glossa-border);
+}
+.glossa-history-search-icon {
+  display: inline-flex;
+  flex: none;
+}
+.glossa-session-search {
+  box-sizing: border-box;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--glossa-fg);
+  font: inherit;
+  font-size: 12px;
+}
+.glossa-session-search::placeholder {
+  color: var(--glossa-muted);
+}
+.glossa-history-search .glossa-session-search:focus-visible {
+  outline: none;
+}
+.glossa-history-scope {
+  display: grid;
+  flex: none;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  margin: 8px 18px 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--glossa-border);
+  color: var(--glossa-muted);
+}
+.glossa-history-scope-label {
+  color: var(--glossa-fg);
+  font-size: 12px;
+  font-weight: 600;
+}
+.glossa-history-count {
+  font-size: 11px;
+}
+.glossa-history-paper {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+}
+.glossa-session-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 2px 8px 14px;
+  color: var(--glossa-muted);
+  font-size: 12px;
+}
+.glossa-history-item {
+  flex: none;
+  min-width: 0;
+  border-radius: 7px;
+}
+.glossa-history-item:hover,
+.glossa-history-item:focus-within {
+  background: var(--glossa-tint);
+}
+.glossa-history-line {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.glossa-session-row {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  min-height: 39px;
+  padding: 8px 5px 8px 10px;
+  text-align: start;
+  background: transparent;
+  border: 0;
+  color: var(--glossa-fg);
+}
+.glossa-session-row[aria-current="true"] {
+  color: var(--glossa-accent);
+}
+.glossa-session-row-title {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  font-weight: 400;
+}
+.glossa-session-row[aria-current="true"] .glossa-session-row-title {
+  font-weight: 600;
+}
+.glossa-session-row-meta {
+  flex: none;
+  color: var(--glossa-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.glossa-session-more {
+  width: 26px;
+  height: 26px;
+  margin-right: 3px;
+  opacity: 0;
+  font-size: 17px !important;
+  line-height: 1;
+}
+.glossa-history-item:hover .glossa-session-more,
+.glossa-history-item:focus-within .glossa-session-more,
+.glossa-session-more[aria-expanded="true"] {
+  opacity: 1;
+}
+@media (hover: none) {
+  .glossa-session-more {
+    opacity: 1;
+  }
+}
+.glossa-session-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 8px 9px 9px;
+}
+.glossa-session-actions button,
+.glossa-session-rename-form button {
+  flex: none;
+  padding: 5px 8px;
+  color: var(--glossa-fg);
+  background: var(--glossa-paper);
+  border: 1px solid var(--glossa-border);
+  border-radius: 6px;
+}
+.glossa-session-actions .glossa-session-delete {
+  margin-inline-start: auto;
+  color: var(--glossa-error);
+  border-color: transparent;
+  background: transparent;
+}
+.glossa-session-rename-form {
+  display: flex;
+  flex: none;
+  gap: 6px;
+  padding: 10px 14px;
+  background: var(--glossa-bg);
+  border-top: 1px solid var(--glossa-border);
+}
+.glossa-session-name {
+  box-sizing: border-box;
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--glossa-border);
+  border-radius: 6px;
+  background: var(--glossa-paper);
+  color: var(--glossa-fg);
+  font: inherit;
+  font-size: 12px;
+}
+.glossa-session-status {
+  padding: 10px 16px;
+  color: var(--glossa-accent);
+  background: var(--glossa-tint);
+  font-size: 11px;
+}
+.glossa-session-status:empty {
+  display: none;
+}
+.glossa-chat button:focus-visible,
+.glossa-chat select:focus-visible,
+.glossa-session-panel input:focus-visible {
+  outline: 2px solid var(--glossa-accent);
+  outline-offset: 2px;
+}
+.glossa-chat button:disabled {
+  opacity: 0.45;
+  cursor: default;
 }

@@ -20,6 +20,7 @@ pref("chatNumber", 6);
 pref("chatNumber.enabled", true);
 pref("chat.contextMode", "related");
 pref("reader.popup", true);
+pref("reader.popupScope", "selection");
 pref("tags", "");
 pref("profiles", "[]");
 pref("profiles.active", "");

@@ -13,13 +13,21 @@
   -->
   <groupbox>
     <label><html:h2 data-l10n-id="pref-general"></html:h2></label>
+    <html:p class="glossa-intro" data-l10n-id="pref-intro"></html:p>
     <html:div class="glossa-layout">
       <html:div class="glossa-profiles">
-        <html:button
-          id="__addonRef__-profile-save"
-          class="glossa-profile-save"
-          data-l10n-id="pref-profile-save"
-        ></html:button>
+        <html:div class="glossa-section-heading glossa-profile-heading">
+          <html:div>
+            <html:span class="glossa-eyebrow">01 / PROFILES</html:span>
+            <html:h3 data-l10n-id="pref-profiles-title"></html:h3>
+            <html:p data-l10n-id="pref-profiles-help"></html:p>
+          </html:div>
+          <html:button
+            id="__addonRef__-profile-save"
+            class="glossa-profile-save"
+            data-l10n-id="pref-profile-save"
+          ></html:button>
+        </html:div>
         <html:div
           id="__addonRef__-profile-list"
           class="glossa-profile-list"
@@ -32,26 +40,13 @@
       </html:div>
 
       <html:div class="glossa-config">
-        <html:div class="glossa-tabs">
-          <html:button
-            class="glossa-tab"
-            data-tab="chat"
-            data-l10n-id="pref-tab-chat"
-          ></html:button>
-          <html:button
-            class="glossa-tab"
-            data-tab="embed"
-            data-l10n-id="pref-tab-embed"
-          ></html:button>
-          <html:button
-            class="glossa-tab"
-            data-tab="other"
-            data-l10n-id="pref-tab-other"
-          ></html:button>
-        </html:div>
-
         <!-- Chat model -->
         <html:div class="glossa-tabpanel" data-panel="chat">
+          <html:div class="glossa-section-heading">
+            <html:span class="glossa-eyebrow">02 / MODEL</html:span>
+            <html:h3 data-l10n-id="pref-connection-title"></html:h3>
+            <html:p data-l10n-id="pref-connection-help"></html:p>
+          </html:div>
           <html:div class="glossa-row">
             <html:label
               id="__addonRef__-api-url-label"
@@ -224,7 +219,12 @@
         </html:div>
 
         <!-- Embeddings -->
-        <html:div class="glossa-tabpanel" data-panel="embed" hidden="hidden">
+        <html:div class="glossa-tabpanel" data-panel="embed">
+          <html:div class="glossa-section-heading">
+            <html:span class="glossa-eyebrow">03 / SOURCES</html:span>
+            <html:h3 data-l10n-id="pref-retrieval-title"></html:h3>
+            <html:p data-l10n-id="pref-retrieval-help"></html:p>
+          </html:div>
           <html:div class="glossa-row">
             <html:label class="glossa-check glossa-span">
               <html:input type="checkbox" data-pref="embed.enabled" />
@@ -301,7 +301,12 @@
         </html:div>
 
         <!-- Other parameters -->
-        <html:div class="glossa-tabpanel" data-panel="other" hidden="hidden">
+        <html:div class="glossa-tabpanel" data-panel="other">
+          <html:div class="glossa-section-heading">
+            <html:span class="glossa-eyebrow">04 / WORKSPACE</html:span>
+            <html:h3 data-l10n-id="pref-workspace-title"></html:h3>
+            <html:p data-l10n-id="pref-workspace-help"></html:p>
+          </html:div>
           <html:div class="glossa-row">
             <html:label data-l10n-id="pref-related"></html:label>
             <html:div class="glossa-field">
@@ -384,6 +389,7 @@
     </html:div>
 
     <html:div class="glossa-test">
+      <html:span class="glossa-eyebrow">05 / DIAGNOSTICS</html:span>
       <html:h3 data-l10n-id="pref-test-title"></html:h3>
       <html:div
         id="__addonRef__-test-output"

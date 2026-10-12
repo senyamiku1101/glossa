@@ -24,6 +24,11 @@ export type RenderedPrompt = {
   prompt: string;
   /** Resent on later turns, with retrieved excerpts left out. */
   compact: string;
+  /** Long source translation, streamed in verified pieces. */
+  translation?: {
+    source: string;
+    promptFor: (piece: string) => Promise<string>;
+  };
 };
 
 /**
@@ -119,12 +124,25 @@ export async function renderQuestion(
   target: Target,
   mode: ContextMode,
   config: ResolvedConfig,
+  selection?: string,
 ): Promise<RenderedPrompt> {
-  if (mode === "chat" || !target.item) return { prompt: input, compact: input };
+  if (mode === "chat" || !target.item) {
+    const quoted = selection?.trim();
+    if (!quoted) return { prompt: input, compact: input };
+    const body = `Selected text:\n${quoted}\n\nQuestion:\n${input}`;
+    return { prompt: body, compact: body };
+  }
   const { key, heading } = QUESTION_CONTEXT[mode];
   // The question is about the document, so rank the document's passages
   // even when some text is selected; the selection is quoted separately.
-  const pack = await collectContext(`{{${key}}}`, input, target, config, false);
+  const pack = await collectContext(
+    `{{${key}}}`,
+    input,
+    target,
+    config,
+    false,
+    selection,
+  );
   const compose = (source: ContextPack) => {
     const year = source.year ? ` (${source.year})` : "";
     return [

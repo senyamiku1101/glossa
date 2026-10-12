@@ -1,7 +1,7 @@
 {
   "name": "glossa",
   "type": "module",
-  "version": "0.2.0",
+  "version": "0.2.12",
   "description": "Fully open-source AI assistant for Zotero. No paid modules, no encrypted payloads.",
   "config": {
     "addonName": "Glossa",
@@ -22,12 +22,12 @@
   "license": "AGPL-3.0-or-later",
   "scripts": {
     "start": "zotero-plugin serve",
-    "build": "zotero-plugin build && tsc --noEmit",
+    "build": "tsc --noEmit && node scripts/pack-source.mjs && zotero-plugin build",
     "lint:check": "prettier --check . && eslint .",
     "lint:fix": "prettier --write . && eslint . --fix",
     "release": "zotero-plugin release",
     "test": "zotero-plugin test",
-    "check": "node scripts/check-logic.mjs"
+    "check": "node scripts/check-logic.mjs && node scripts/check-sessions.mjs && node scripts/check-pdf-paragraph.mjs && node scripts/check-pdf-layout.mjs && node scripts/check-pdf-layout-edges.mjs && node scripts/check-pdf-multi.mjs && node scripts/check-pdf-reader-access.mjs && node scripts/check-selection-popup.mjs"
   },
   "dependencies": {
     "zotero-plugin-toolkit": "^5.1.0-beta.13"

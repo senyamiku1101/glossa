@@ -621,7 +621,12 @@ assert(
     conversationFileName({ type: "user" }, "../") === undefined,
 );
 const stored = serializeConversation("Title", [
-  { role: "user", content: "compact", display: "AskPDF · q" },
+  {
+    role: "user",
+    content: "compact",
+    display: "AskPDF · q",
+    source: { text: "PDF excerpt [1]", truncated: false },
+  },
   { role: "assistant", content: "answer", reasoning: "secret thoughts" },
 ]);
 const restored = parseConversation(stored);
@@ -629,6 +634,8 @@ assert(
   "conversation round trip keeps display, drops reasoning",
   restored.length === 2 &&
     restored[0].display === "AskPDF · q" &&
+    restored[0].source.text === "PDF excerpt [1]" &&
+    restored[0].source.truncated === false &&
     restored[1].content === "answer" &&
     !("reasoning" in restored[1]) &&
     !stored.includes("secret thoughts"),

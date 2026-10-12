@@ -2,52 +2,52 @@ import { config } from "../../package.json";
 import { conversationsDir, io, paths } from "../utils/paths";
 import {
   conversationFileName,
-  parseConversation,
-  serializeConversation,
+  parseSessionFile,
+  serializeSessionFile,
+  sessionTitle,
+  type SessionRecord,
+  type SessionFile,
   type Turn,
 } from "../utils/history";
 
-/** A question being answered; lives in memory only. */
 export type Pending = { display: string; text: string; reasoning: string };
-
-export type Conversation = {
-  /** `${libraryID}/${itemKey}`, or "none" when no item is selected. */
-  key: string;
-  label: string;
-  turns: Turn[];
-  loaded: boolean;
+export type Session = SessionRecord & {
   pending?: Pending;
-  /** The last question that got no answer, shown until the next one. */
   failed?: { display: string; error: string };
 };
-
+export type Conversation = {
+  key: string;
+  label: string;
+  sessions: Session[];
+  activeId: string;
+  loaded: boolean;
+  storageError?: boolean;
+};
 export type StoreEvent = {
   key: string;
-  /**
-   * loaded/changed: redraw everything; delta: only the pending answer grew;
-   * busy: a run started or ended somewhere (key is that run's key).
-   */
-  kind: "loaded" | "changed" | "delta" | "busy";
+  kind: "loaded" | "changed" | "delta" | "busy" | "session";
 };
 
-const MAX_IN_MEMORY = 100;
+function blankSession(): Session {
+  const now = new Date().toISOString();
+  return {
+    id: Zotero.Utilities.randomString(16),
+    title: "",
+    createdAt: now,
+    updatedAt: now,
+    turns: [],
+  };
+}
 
-/**
- * Conversations per item, persisted as one JSON file each under the Zotero
- * data directory. Views never hold on to a Conversation; they look it up by
- * key on every event, so eviction and reloads are invisible to them.
- */
-class ConversationStore {
+/** One file per item; stream destinations are session IDs, never the current tab. */
+export class ConversationStore {
   private convos = new Map<string, Conversation>();
   private loads = new Map<string, Promise<Conversation>>();
-  /** Writes and deletes per key run in order on one chain. */
   private writes = new Map<string, Promise<void>>();
-  /** Bumped by clear(), so a load that finishes afterwards is discarded. */
-  private generations = new Map<string, number>();
   private listeners = new Set<(event: StoreEvent) => void>();
   private notifierID?: string;
-  private warned = false;
   busyKey?: string;
+  busySessionId?: string;
 
   init() {
     this.notifierID = Zotero.Notifier.registerObserver(
@@ -56,14 +56,13 @@ class ConversationStore {
           if (type !== "item" || event !== "delete") return;
           for (const id of ids as number[]) {
             const data = extra?.[id];
-            if (data?.libraryID && data?.key) {
-              this.forget(`${data.libraryID}/${data.key}`);
-            }
+            if (data?.libraryID && data?.key)
+              this.forget(data.libraryID + "/" + data.key);
           }
         },
       },
       ["item"],
-      `${config.addonRef}-conversations`,
+      config.addonRef + "-conversations",
     );
   }
 
@@ -87,174 +86,238 @@ class ConversationStore {
     }
   }
 
-  /** The conversation for `key`, possibly not loaded yet. */
   get(key: string, label = ""): Conversation {
     let convo = this.convos.get(key);
     if (!convo) {
-      convo = { key, label, turns: [], loaded: key === "none" };
+      const first = blankSession();
+      convo = {
+        key,
+        label,
+        sessions: [first],
+        activeId: first.id,
+        loaded: key === "none",
+      };
       this.convos.set(key, convo);
       this.evict();
-    } else if (label) {
-      convo.label = label;
-    }
+    } else if (label) convo.label = label;
     return convo;
   }
 
+  active(key: string): Session {
+    const convo = this.get(key);
+    return convo.sessions.find((session) => session.id === convo.activeId)!;
+  }
+
+  private session(key: string, id: string) {
+    return this.convos.get(key)?.sessions.find((session) => session.id === id);
+  }
+
   private evict() {
-    if (this.convos.size <= MAX_IN_MEMORY) return;
+    if (this.convos.size <= 100) return;
     for (const [key, convo] of this.convos) {
-      if (this.convos.size <= MAX_IN_MEMORY) break;
-      const idle = !convo.pending && convo.loaded && !this.writes.has(key);
-      if (key !== this.busyKey && idle) {
+      if (this.convos.size <= 100) break;
+      if (
+        key !== this.busyKey &&
+        key !== "none" &&
+        convo.loaded &&
+        !convo.storageError &&
+        !this.writes.has(key) &&
+        !convo.sessions.some((session) => session.pending)
+      )
         this.convos.delete(key);
-      }
     }
   }
 
-  /**
-   * Load from disk once. Nothing may be appended before this resolves,
-   * or the first save would overwrite the stored history.
-   */
   ensureLoaded(key: string, label = ""): Promise<Conversation> {
     const convo = this.get(key, label);
     if (convo.loaded) return Promise.resolve(convo);
     let loading = this.loads.get(key);
     if (!loading) {
-      const generation = this.generations.get(key) || 0;
-      // Read after any queued write for this key has landed.
       const queued = this.writes.get(key) || Promise.resolve();
       loading = queued
         .then(() => this.read(key))
-        .then((turns) => {
-          const current = this.get(key);
-          if ((this.generations.get(key) || 0) === generation && turns) {
-            current.turns = turns;
+        .then((data) => {
+          // An item can be deleted while its file is being read.
+          if (this.convos.get(key) !== convo) return convo;
+          if (data) {
+            convo.sessions = data.sessions;
+            convo.activeId = data.activeId;
           }
-          current.loaded = true;
-          return current;
+          convo.loaded = true;
+          return convo;
         })
         .catch((error) => {
-          ztoolkit.log("[Glossa] cannot load conversation", key, error);
-          const current = this.get(key);
-          current.loaded = true;
-          return current;
+          // Keep the original file intact, and block writes until a restart/retry.
+          convo.loaded = true;
+          convo.storageError = true;
+          ztoolkit.log("[Glossa] cannot load sessions", key, error);
+          return convo;
         })
         .finally(() => {
-          this.loads.delete(key);
-          this.emit(key, "loaded");
+          if (this.loads.get(key) === loading) this.loads.delete(key);
+          if (this.convos.get(key) === convo) this.emit(key, "loaded");
         });
       this.loads.set(key, loading);
     }
     return loading;
   }
 
-  setBusy(key: string | undefined) {
-    const previous = this.busyKey;
-    this.busyKey = key;
-    this.emit(key || previous || "none", "busy");
+  createSession(key: string) {
+    const convo = this.get(key);
+    if (!convo.loaded || convo.storageError) return;
+    const current = this.active(key);
+    if (!current.turns.length && !current.pending && !current.failed)
+      return current;
+    const session = blankSession();
+    convo.sessions.push(session);
+    convo.activeId = session.id;
+    this.save(convo);
+    this.emit(key, "session");
+    return session;
   }
 
-  startPending(key: string, display: string) {
+  selectSession(key: string, id: string) {
     const convo = this.get(key);
-    convo.failed = undefined;
-    convo.pending = { display, text: "", reasoning: "" };
+    if (!convo.loaded || !this.session(key, id) || convo.activeId === id)
+      return;
+    convo.activeId = id;
+    this.save(convo);
+    this.emit(key, "session");
+  }
+
+  renameSession(key: string, id: string, title: string) {
+    const session = this.session(key, id);
+    const name = title.replace(/\s+/g, " ").trim().slice(0, 120);
+    if (!session || !name || this.get(key).storageError) return;
+    session.title = name;
+    this.save(this.get(key));
     this.emit(key, "changed");
   }
 
-  updatePending(key: string, text: string, reasoning: string) {
-    const pending = this.convos.get(key)?.pending;
+  deleteSession(key: string, id: string) {
+    const convo = this.get(key);
+    if (
+      !convo.loaded ||
+      convo.storageError ||
+      (this.busyKey === key && this.busySessionId === id)
+    )
+      return false;
+    if (!this.session(key, id)) return false;
+    convo.sessions = convo.sessions.filter((session) => session.id !== id);
+    if (!convo.sessions.length) convo.sessions.push(blankSession());
+    if (convo.activeId === id) {
+      convo.activeId = [...convo.sessions].sort((a, b) =>
+        b.updatedAt.localeCompare(a.updatedAt),
+      )[0].id;
+    }
+    this.save(convo);
+    this.emit(key, "session");
+    return true;
+  }
+
+  setBusy(key: string | undefined, sessionId?: string) {
+    const previous = this.busyKey;
+    this.busyKey = key;
+    this.busySessionId = sessionId;
+    this.emit(key || previous || "none", "busy");
+  }
+
+  startPending(key: string, id: string, display: string) {
+    const session = this.session(key, id);
+    if (!session) return;
+    session.failed = undefined;
+    session.pending = { display, text: "", reasoning: "" };
+    this.emit(key, "changed");
+  }
+
+  updatePending(key: string, id: string, text: string, reasoning: string) {
+    const pending = this.session(key, id)?.pending;
     if (!pending) return;
     pending.text = text;
     pending.reasoning = reasoning;
     this.emit(key, "delta");
   }
 
-  /** Keep the question and its answer, and save. */
-  commitPending(key: string, question: Turn, answer: Turn) {
-    const convo = this.get(key);
-    convo.pending = undefined;
-    convo.turns.push(question, answer);
-    this.emit(key, "changed");
-    this.save(convo);
-  }
-
-  /** Drop the question; the history stays paired. */
-  failPending(key: string, error: string) {
-    const convo = this.get(key);
-    if (convo.pending) {
-      convo.failed = { display: convo.pending.display, error };
-    }
-    convo.pending = undefined;
+  commitPending(key: string, id: string, question: Turn, answer: Turn) {
+    const session = this.session(key, id);
+    if (!session) return;
+    session.pending = undefined;
+    session.turns.push(question, answer);
+    if (!session.title) session.title = sessionTitle(session.turns);
+    session.updatedAt = new Date().toISOString();
+    this.save(this.get(key));
     this.emit(key, "changed");
   }
 
-  /** "New chat": forget the turns and delete the file. */
-  clear(key: string) {
-    const convo = this.get(key);
-    this.generations.set(key, (this.generations.get(key) || 0) + 1);
-    convo.turns = [];
-    convo.failed = undefined;
-    convo.loaded = true;
+  failPending(key: string, id: string | undefined, error: string) {
+    const session = id && this.session(key, id);
+    if (!session) return;
+    if (session.pending)
+      session.failed = { display: session.pending.display, error };
+    session.pending = undefined;
     this.emit(key, "changed");
-    this.remove(key);
   }
 
-  /** The item was deleted. */
   private forget(key: string) {
-    this.generations.set(key, (this.generations.get(key) || 0) + 1);
+    const path = this.filePath(key);
+    const loading = this.loads.get(key);
     this.convos.delete(key);
-    this.remove(key);
+    this.loads.delete(key);
+    if (path)
+      this.enqueue(key, async () => {
+        // A v1 read may still be writing its backup. Remove it only afterward.
+        await loading;
+        await io().remove(path, { ignoreAbsent: true });
+        await io().remove(path + ".v1.bak", { ignoreAbsent: true });
+      });
   }
-
-  // ---- disk
 
   private filePath(key: string) {
     const [libraryIDText, itemKey] = key.split("/");
     const libraryID = Number(libraryIDText);
-    if (!itemKey || !Number.isInteger(libraryID)) return undefined;
+    if (!itemKey || !Number.isInteger(libraryID)) return;
     const library = Zotero.Libraries.get(libraryID);
-    if (!library) return undefined;
+    if (!library) return;
     let name: string | undefined;
-    if (library.libraryType === "user") {
+    if (library.libraryType === "user")
       name = conversationFileName({ type: "user" }, itemKey);
-    } else if (library.libraryType === "group") {
-      const groupID = Zotero.Groups.getGroupIDFromLibraryID(libraryID);
-      name = conversationFileName({ type: "group", groupID }, itemKey);
+    else if (library.libraryType === "group") {
+      name = conversationFileName(
+        {
+          type: "group",
+          groupID: Zotero.Groups.getGroupIDFromLibraryID(libraryID),
+        },
+        itemKey,
+      );
     }
-    // Feeds and unknown libraries stay in memory.
     return name ? paths().join(conversationsDir(), name) : undefined;
   }
 
-  private async read(key: string): Promise<Turn[] | undefined> {
+  private async read(key: string): Promise<SessionFile | undefined> {
     const path = this.filePath(key);
-    if (!path || !(await io().exists(path))) return undefined;
+    if (!path || !(await io().exists(path))) return;
     const raw = await io().readUTF8(path);
-    const turns = parseConversation(raw);
-    if (!turns) {
-      // Keep the unreadable file for inspection instead of overwriting it.
-      await io().move(path, `${path}.corrupt`);
-      ztoolkit.log("[Glossa] moved unreadable conversation aside", path);
+    const data = parseSessionFile(raw);
+    if (!data) throw new Error("Unsupported or damaged session file");
+    // Retain an untouched backup before the first write in the new format.
+    if (data.migrated && !(await io().exists(path + ".v1.bak"))) {
+      await io().writeUTF8(path + ".v1.bak", raw);
     }
-    return turns;
+    return data;
   }
 
   private save(convo: Conversation) {
+    if (convo.storageError) return;
     const path = this.filePath(convo.key);
     if (!path) return;
-    const data = serializeConversation(convo.label, convo.turns);
+    const data = serializeSessionFile(convo.label, convo);
     this.enqueue(convo.key, async () => {
       await io().makeDirectory(conversationsDir(), {
         createAncestors: true,
         ignoreExisting: true,
       });
-      await io().writeUTF8(path, data, { tmpPath: `${path}.tmp` });
+      await io().writeUTF8(path, data, { tmpPath: path + ".tmp" });
     });
-  }
-
-  private remove(key: string) {
-    const path = this.filePath(key);
-    if (!path) return;
-    this.enqueue(key, () => io().remove(path, { ignoreAbsent: true }));
   }
 
   private enqueue(key: string, task: () => Promise<unknown>) {
@@ -263,11 +326,10 @@ class ConversationStore {
       .then(task)
       .then(() => undefined)
       .catch((error) => {
-        // Disk trouble must not break chatting; keep going in memory.
-        if (!this.warned) {
-          this.warned = true;
-          ztoolkit.log("[Glossa] conversation storage failed", error);
-        }
+        const convo = this.convos.get(key);
+        if (convo) convo.storageError = true;
+        ztoolkit.log("[Glossa] session storage failed", error);
+        this.emit(key, "changed");
       });
     this.writes.set(key, next);
     void next.finally(() => {
