@@ -63,6 +63,7 @@ class PreferencesPane {
   }
 
   init() {
+    this.initTabs();
     this.bindPrefs();
     this.bindSecret("api-key", "api.key");
     this.bindSecret("embed-key", "embed.key");
@@ -70,11 +71,57 @@ class PreferencesPane {
     this.initUrlControls();
     this.initMenus();
     this.initProfiles();
+    this.initTranslationProfiles();
     this.initTest();
     this.initStorage();
     initTagEditor(this.doc);
     this.refreshDerived();
     this.win.addEventListener("unload", () => this.dispose(), { once: true });
+  }
+
+  /** One settings panel visible at a time; the tabs switch between them. */
+  private initTabs() {
+    const tabs = [...this.root.querySelectorAll<HTMLElement>(".glossa-tab")];
+    const panels = [
+      ...this.root.querySelectorAll<HTMLElement>(".glossa-tabpanel"),
+    ];
+    const show = (name: string) => {
+      for (const tab of tabs) {
+        const active = tab.dataset.tab === name;
+        tab.setAttribute("aria-selected", String(active));
+        // Roving tabindex: Tab reaches the active tab, arrows move inside.
+        tab.tabIndex = active ? 0 : -1;
+      }
+      for (const panel of panels) panel.hidden = panel.dataset.panel !== name;
+    };
+    const activate = (tab: HTMLElement) => {
+      show(tab.dataset.tab || "chat");
+      tab.focus();
+    };
+    tabs.forEach((tab, index) => {
+      const name = tab.dataset.tab || "chat";
+      tab.id = `${ref}-tab-${name}`;
+      tab.setAttribute("aria-controls", `${ref}-panel-${name}`);
+      tab.addEventListener("click", () => show(name));
+      tab.addEventListener("keydown", (event: Event) => {
+        const key = event as KeyboardEvent;
+        let next = -1;
+        if (key.key === "ArrowRight") next = (index + 1) % tabs.length;
+        else if (key.key === "ArrowLeft")
+          next = (index - 1 + tabs.length) % tabs.length;
+        else if (key.key === "Home") next = 0;
+        else if (key.key === "End") next = tabs.length - 1;
+        if (next < 0) return;
+        key.preventDefault();
+        activate(tabs[next]);
+      });
+    });
+    for (const panel of panels) {
+      const name = panel.dataset.panel || "chat";
+      panel.id = `${ref}-panel-${name}`;
+      panel.setAttribute("aria-labelledby", `${ref}-tab-${name}`);
+    }
+    show("chat");
   }
 
   private dispose() {
@@ -534,6 +581,91 @@ class PreferencesPane {
 
   private alert(text: string) {
     Services.prompt.alert(this.win as any, "Glossa", text);
+  }
+
+  // ---- collaborative translation profiles
+
+  /**
+   * Two saved profiles used for draft → review translation. They are global
+   * (not part of a chat profile) and only resolved when the user asks for a
+   * collaborative or on-demand review, so picking them never changes the
+   * current chat settings.
+   */
+  private initTranslationProfiles() {
+    const draft = this.el<HTMLSelectElement>("translation-draft-profile");
+    const review = this.el<HTMLSelectElement>("translation-review-profile");
+    draft.addEventListener("change", () => {
+      setPref("translation.draftProfile", draft.value);
+      this.renderTranslationProfiles();
+    });
+    review.addEventListener("change", () => {
+      setPref("translation.reviewProfile", review.value);
+      this.renderTranslationProfiles();
+    });
+    // Profiles can be renamed, added or deleted elsewhere; the saved picks
+    // themselves can also change from another open pane.
+    for (const key of [
+      "profiles",
+      "profiles.active",
+      "translation.draftProfile",
+      "translation.reviewProfile",
+    ]) {
+      const symbol = Zotero.Prefs.registerObserver(
+        `${PREFIX}.${key}`,
+        () => this.renderTranslationProfiles(),
+        true,
+      );
+      this.cleanup.push(() => Zotero.Prefs.unregisterObserver(symbol));
+    }
+    this.renderTranslationProfiles();
+  }
+
+  private renderTranslationProfiles() {
+    const profiles = getProfiles();
+    const hint = this.el("translation-hint");
+    const fill = (
+      select: HTMLSelectElement,
+      prefKey: "translation.draftProfile" | "translation.reviewProfile",
+    ) => {
+      const stored = String(getPref(prefKey) || "");
+      const exists = Boolean(stored) && profiles.some((p) => p.id === stored);
+      // Keep the localized placeholder option; rebuild only the profile list.
+      while (select.options.length > 1) select.remove(1);
+      for (const profile of profiles) {
+        ztoolkit.UI.appendElement(
+          {
+            tag: "option",
+            namespace: "html",
+            properties: { value: profile.id, textContent: profile.name },
+          },
+          select,
+        );
+      }
+      // Restore the stored choice; if it was deleted show the placeholder and
+      // flag it rather than silently dropping to the first profile.
+      select.value = exists ? stored : "";
+      return Boolean(stored) && !exists;
+    };
+    const draftMissing = fill(
+      this.el<HTMLSelectElement>("translation-draft-profile"),
+      "translation.draftProfile",
+    );
+    const reviewMissing = fill(
+      this.el<HTMLSelectElement>("translation-review-profile"),
+      "translation.reviewProfile",
+    );
+    const draftPick = String(getPref("translation.draftProfile") || "");
+    const reviewPick = String(getPref("translation.reviewProfile") || "");
+    const sameProfile =
+      Boolean(draftPick) &&
+      draftPick === reviewPick &&
+      profiles.some((profile) => profile.id === draftPick);
+    hint.textContent =
+      draftMissing || reviewMissing
+        ? getString("translation-profile-missing")
+        : sameProfile
+          ? getString("pref-translation-same-profile")
+          : "";
   }
 
   // ---- connectivity test

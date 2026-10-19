@@ -10,12 +10,14 @@ import {
   type Target,
 } from "./context";
 import { conversations, type StoreEvent } from "./conversations";
+import type { Turn } from "../utils/history";
+import { openGlossaryManager } from "./glossaryUI";
 import { renderMarkdown } from "./markdown";
 import { getPDFSelection } from "./pdf";
 import { runner } from "./runner";
 import { saveSessionNote } from "./notes";
 import { applyProfile, getProfiles, matchingProfileId } from "./settings";
-import { getTags, type CommandTag } from "./tags";
+import { getTags, TRANSLATE_TEMPLATE, type CommandTag } from "./tags";
 
 export type ChatViewOptions = {
   /** Show "Glossa" in the header; the item pane section has its own. */
@@ -98,6 +100,7 @@ export class ChatView {
   }
 
   dispose() {
+    this.dismissCopyMenu();
     this.unsubscribe();
     views.delete(this);
     if (this.frame) this.win.cancelAnimationFrame(this.frame);
@@ -189,10 +192,25 @@ export class ChatView {
           {
             type: "keydown",
             listener: (ev: Event) => {
-              if ((ev as KeyboardEvent).key !== "Escape") return;
+              const key = ev as KeyboardEvent;
+              // Zotero's chrome document has no native copy command for plain
+              // text: copy the current selection ourselves on Ctrl+C.
+              if (
+                (key.ctrlKey || key.metaKey) &&
+                !key.shiftKey &&
+                !key.altKey &&
+                (key.key === "c" || key.key === "C")
+              ) {
+                if (this.copySelection()) {
+                  key.preventDefault();
+                  key.stopPropagation();
+                }
+                return;
+              }
+              if (key.key !== "Escape") return;
               if (!this.part(".glossa-session-panel").hidden) {
-                ev.preventDefault();
-                ev.stopPropagation();
+                key.preventDefault();
+                key.stopPropagation();
                 this.toggleSessions(false);
                 this.part(".glossa-session-toggle").focus({
                   preventScroll: true,
@@ -200,9 +218,13 @@ export class ChatView {
                 return;
               }
               if (!this.options.onEscape) return;
-              ev.preventDefault();
+              key.preventDefault();
               this.options.onEscape();
             },
+          },
+          {
+            type: "contextmenu",
+            listener: (ev: Event) => this.onContextMenu(ev as MouseEvent),
           },
         ],
         children: [
@@ -256,6 +278,23 @@ export class ChatView {
                 properties: { innerHTML: HISTORY_ICON },
                 listeners: [
                   { type: "click", listener: () => this.toggleSessions() },
+                ],
+              },
+              {
+                tag: "button",
+                namespace: html,
+                classList: ["glossa-glossary", "glossa-icon-button"],
+                attributes: {
+                  type: "button",
+                  "aria-label": getString("glossary-title"),
+                  title: getString("glossary-title"),
+                },
+                properties: { innerHTML: GLOSSARY_ICON },
+                listeners: [
+                  {
+                    type: "click",
+                    listener: () => void openGlossaryManager(),
+                  },
                 ],
               },
               {
@@ -651,19 +690,28 @@ export class ChatView {
     if (!convo.turns.length && !convo.pending && !convo.failed) {
       appendBubble(out, "hint", getString("empty-hint"));
     }
-    for (const turn of convo.turns) {
+    convo.turns.forEach((turn, turnIndex) => {
       const text = turn.display ?? turn.content;
       if (turn.role === "user") {
         appendBubble(out, "user", text);
         if (turn.source) this.sourceBlock(out, turn.source);
-        continue;
+        return;
       }
       if (turn.reasoning) {
         this.reasoningBlock(out, getString("reasoning")).body.textContent =
           turn.reasoning;
       }
-      renderMarkdown(this.answerBlock(out), text);
-    }
+      const assistant = this.answerBlock(out);
+      renderMarkdown(assistant, text);
+      if (turn.translation && assistant.parentElement) {
+        this.translationMeta(
+          assistant.parentElement,
+          turn,
+          convo.id,
+          turnIndex,
+        );
+      }
+    });
     if (convo.failed) {
       // Not in the history: shown struck through, with the reason.
       appendBubble(out, "user", convo.failed.display).classList.add(
@@ -692,10 +740,16 @@ export class ChatView {
     if (!pending || !els) return;
     const out = this.transcript;
     const follow = isNearEnd(out);
-    els.reasoning.hidden = !pending.reasoning;
-    els.summary.textContent = getString(
-      pending.text ? "reasoning" : "reasoning-live",
-    );
+    const stage = pending.stage;
+    // The stage label lives in the summary, so keep the row visible for a
+    // stage even when the model produces no reasoning of its own.
+    els.reasoning.hidden = !pending.reasoning && !stage;
+    els.summary.textContent =
+      stage === "reviewing"
+        ? getString("translation-phase-review")
+        : stage === "translating"
+          ? getString("translation-phase-draft")
+          : getString(pending.text ? "reasoning" : "reasoning-live");
     els.reasoningBody.textContent = pending.reasoning;
     renderMarkdown(els.answer, pending.text || getString("thinking"));
     if (follow) out.scrollTop = out.scrollHeight;
@@ -711,8 +765,41 @@ export class ChatView {
           {
             tag: "div",
             namespace: "html",
-            classList: ["glossa-answer-label"],
-            properties: { textContent: getString("note-label") },
+            classList: ["glossa-answer-top"],
+            children: [
+              {
+                tag: "div",
+                namespace: "html",
+                classList: ["glossa-answer-label"],
+                properties: { textContent: getString("note-label") },
+              },
+              {
+                tag: "button",
+                namespace: "html",
+                classList: ["glossa-icon-button", "glossa-copy-answer"],
+                attributes: {
+                  type: "button",
+                  title: getString("copy"),
+                  "aria-label": getString("copy"),
+                },
+                properties: { innerHTML: COPY_ICON },
+                listeners: [
+                  {
+                    type: "click",
+                    listener: (ev: Event) => {
+                      const btn = ev.currentTarget as HTMLElement;
+                      const body = btn
+                        .closest(".glossa-answer-card")
+                        ?.querySelector(
+                          ".glossa-assistant",
+                        ) as HTMLElement | null;
+                      this.copyText(body ? extractText(body) : "");
+                      this.flashCopied(btn);
+                    },
+                  },
+                ],
+              },
+            ],
           },
           {
             tag: "div",
@@ -790,6 +877,182 @@ export class ChatView {
     };
   }
 
+  /**
+   * Status, models, draft and the review action under a translation answer.
+   * `info` is the local translation metadata; the rendered body above it is
+   * the latest result (the reviewed text when one exists).
+   */
+  private translationMeta(
+    card: Element,
+    turn: Turn,
+    sessionId: string,
+    turnIndex: number,
+  ) {
+    const info = turn.translation;
+    if (!info) return;
+    const statusKey =
+      info.status === "reviewed"
+        ? "translation-status-reviewed"
+        : info.status === "review-failed"
+          ? "translation-status-review-failed"
+          : info.status === "stopped"
+            ? "translation-status-stopped"
+            : info.status === "incomplete"
+              ? "translation-status-incomplete"
+              : info.mode === "quick"
+                ? "translation-status-quick"
+                : info.mode === "review"
+                  ? "translation-review-title"
+                  : "selection-collaborative";
+    // Core reviews any turn that still has its complete source; an
+    // incomplete one is the only committed status that cannot be reviewed.
+    const reviewable = Boolean(
+      info.source &&
+      !info.sourceTruncated &&
+      info.status !== "incomplete" &&
+      turn.content.trim(),
+    );
+    // New buttons are created after renderBusy ran for this pass, so the
+    // busy/storage gates must be applied here too, not only in renderBusy.
+    const key = this.key;
+    const bucket = key ? conversations.get(key) : undefined;
+    const reviewDisabled =
+      runner.busy || !bucket || !bucket.loaded || !!bucket.storageError;
+    const host = ztoolkit.UI.appendElement(
+      {
+        tag: "div",
+        namespace: "html",
+        classList: ["glossa-translation-meta"],
+        children: [
+          {
+            tag: "span",
+            namespace: "html",
+            classList: ["glossa-translation-chip", `glossa-tl-${info.status}`],
+            properties: { textContent: getString(statusKey) },
+          },
+          ...(info.translator
+            ? [
+                {
+                  tag: "span",
+                  namespace: "html" as const,
+                  classList: ["glossa-translation-model"],
+                  properties: {
+                    textContent: getString("translation-translator", {
+                      args: { model: info.translator },
+                    }),
+                    title: info.translator,
+                  },
+                },
+              ]
+            : []),
+          ...(info.reviewer
+            ? [
+                {
+                  tag: "span",
+                  namespace: "html" as const,
+                  classList: ["glossa-translation-model"],
+                  properties: {
+                    textContent: getString("translation-reviewer", {
+                      args: { model: info.reviewer },
+                    }),
+                    title: info.reviewer,
+                  },
+                },
+              ]
+            : []),
+          ...(reviewable
+            ? [
+                {
+                  tag: "button",
+                  namespace: "html" as const,
+                  classList: ["glossa-translation-review"],
+                  attributes: { type: "button" },
+                  properties: {
+                    textContent: getString("translation-review-action"),
+                    title: getString("translation-review-action"),
+                    disabled: reviewDisabled,
+                  },
+                  listeners: [
+                    {
+                      type: "click",
+                      listener: (ev: Event) => {
+                        const button = ev.currentTarget as HTMLButtonElement;
+                        button.disabled = true;
+                        void this.reviewTranslation(
+                          sessionId,
+                          turnIndex,
+                        ).finally(() => this.renderBusy());
+                      },
+                    },
+                  ],
+                },
+              ]
+            : []),
+        ],
+      },
+      card,
+    ) as HTMLElement;
+    if (info.warning) {
+      // `warning` arrives already localized from the store; show it as is.
+      ztoolkit.UI.appendElement(
+        {
+          tag: "div",
+          namespace: "html",
+          classList: ["glossa-translation-warning"],
+          properties: { textContent: info.warning },
+        },
+        host,
+      );
+    }
+    // The folded draft is only worth showing when it differs from the final
+    // body; a kept draft after a failed or stopped review is the body itself.
+    if (info.draft && info.draft !== turn.content) {
+      const details = ztoolkit.UI.appendElement(
+        {
+          tag: "details",
+          namespace: "html",
+          classList: ["glossa-translation-draft"],
+          children: [
+            {
+              tag: "summary",
+              namespace: "html",
+              properties: { textContent: getString("translation-draft-label") },
+            },
+            {
+              tag: "div",
+              namespace: "html",
+              classList: ["glossa-translation-draft-body"],
+            },
+          ],
+        },
+        host,
+      ) as HTMLDetailsElement;
+      const body = details.querySelector(
+        ".glossa-translation-draft-body",
+      ) as HTMLElement;
+      body.textContent = info.draft;
+    }
+  }
+
+  /**
+   * Ask the store to review one committed translation turn in place. The
+   * runner reports configuration problems or a busy pipeline as a failed
+   * pending turn itself; false only means nothing ran.
+   */
+  private async reviewTranslation(sessionId: string, turnIndex: number) {
+    this.refreshTarget();
+    if (!this.target) return;
+    try {
+      await runner.reviewTranslation({
+        target: this.target,
+        sessionId,
+        turnIndex,
+      });
+    } catch (error) {
+      ztoolkit.log("[Glossa] review translation failed", error);
+    }
+  }
+
   private renderBusy() {
     const busy = runner.busy;
     const bucket = this.key ? conversations.get(this.key) : undefined;
@@ -844,6 +1107,12 @@ export class ChatView {
       });
     this.root
       .querySelectorAll<HTMLButtonElement>(".glossa-tag")
+      .forEach((button: HTMLButtonElement) => {
+        button.disabled =
+          busy || !bucket || !bucket.loaded || !!bucket.storageError;
+      });
+    this.root
+      .querySelectorAll<HTMLButtonElement>(".glossa-translation-review")
       .forEach((button: HTMLButtonElement) => {
         button.disabled =
           busy || !bucket || !bucket.loaded || !!bucket.storageError;
@@ -955,12 +1224,36 @@ export class ChatView {
       this.askForInput(tag.name);
       return;
     }
+    // Only the standard translation template gets translation metadata; a
+    // user-edited prompt is never assumed to produce a reviewable translation.
+    const standardTranslate = tag.template.trim() === TRANSLATE_TEMPLATE.trim();
+    // Same rule collectContext applies: an explicit quote wins, otherwise the
+    // live PDF selection. Snapshot it now so the rendered prompt and the
+    // recorded source describe the same text.
+    const effectiveSelection = (selection || getPDFSelection() || "").trim();
+    // TRANSLATE_TEMPLATE renders {{selection}} and {{input}} together, so the
+    // review source must contain both parts the model actually translates.
+    const source = [effectiveSelection, input]
+      .filter(Boolean)
+      .join("\n")
+      .trim();
     await runner.ask({
       target: this.target,
       sessionId: conversations.active(this.target.key).id,
       display: input ? `${tag.name} · ${input}` : tag.name,
-      build: (target, snapshot) =>
-        renderTemplate(tag.template, input, target, snapshot, selection),
+      build: async (target, snapshot) => {
+        const rendered = await renderTemplate(
+          tag.template,
+          input,
+          target,
+          snapshot,
+          effectiveSelection,
+        );
+        if (standardTranslate && source) {
+          rendered.translationRequest = { mode: "quick", source };
+        }
+        return rendered;
+      },
     });
   }
 
@@ -1305,6 +1598,119 @@ export class ChatView {
     }
     await applyProfile(id);
   }
+
+  // ---- copy support
+  //
+  // Zotero's chrome document does not route Ctrl+C or a context-menu Copy to
+  // plain text nodes: only inputs/textareas copy natively. We copy the window
+  // selection ourselves, and offer a small right-click Copy menu so selected
+  // answer text can be copied without a keyboard.
+
+  /** Copy the window's current selection. Returns false when nothing is selected. */
+  private copySelection() {
+    const selection = this.win.getSelection();
+    const text = selection ? selection.toString() : "";
+    if (!text) return false;
+    this.copyText(text);
+    return true;
+  }
+
+  private copyText(text: string) {
+    if (!text) return;
+    Zotero.Utilities.Internal.copyTextToClipboard(text);
+  }
+
+  /** Briefly switch a copy button to a check mark as feedback. */
+  private flashCopied(button: HTMLElement) {
+    const doc = this.win.document;
+    const original = button.innerHTML;
+    button.classList.add("glossa-copied");
+    button.innerHTML = CHECK_ICON;
+    this.win.setTimeout(() => {
+      if (!doc.contains(button)) return;
+      button.innerHTML = original;
+      button.classList.remove("glossa-copied");
+    }, 1200);
+  }
+
+  private onContextMenu(event: MouseEvent) {
+    // Only take over when there is selectable, selected text inside the chat.
+    const selection = this.win.getSelection();
+    const selected = selection ? selection.toString() : "";
+    if (!selected) return;
+    const target = event.target as Node | null;
+    if (target && !this.root.contains(target)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.showCopyMenu(event, selected);
+  }
+
+  private showCopyMenu(event: MouseEvent, text: string) {
+    const doc = this.win.document;
+    this.dismissCopyMenu();
+    const menu = doc.createElementNS(
+      "http://www.w3.org/1999/xhtml",
+      "div",
+    ) as HTMLDivElement;
+    menu.className = "glossa-context-menu";
+    const item = doc.createElementNS(
+      "http://www.w3.org/1999/xhtml",
+      "button",
+    ) as HTMLButtonElement;
+    item.className = "glossa-context-item";
+    item.type = "button";
+    item.textContent = getString("copy");
+    item.addEventListener("click", () => {
+      this.copyText(text);
+      this.dismissCopyMenu();
+    });
+    menu.append(item);
+    (doc.body || doc.documentElement || this.root).append(menu);
+    // Keep the menu inside the window near the cursor.
+    const rect = menu.getBoundingClientRect();
+    const x = Math.min(event.clientX, this.win.innerWidth - rect.width - 8);
+    const y = Math.min(event.clientY, this.win.innerHeight - rect.height - 8);
+    menu.style.left = Math.max(4, x) + "px";
+    menu.style.top = Math.max(4, y) + "px";
+    this.copyMenu = menu;
+    const dismiss = (ev: Event) => {
+      if (!menu.contains(ev.target as Node)) this.dismissCopyMenu();
+    };
+    const onBlur = () => this.dismissCopyMenu();
+    const onKeyDown = (e: Event) => {
+      if ((e as KeyboardEvent).key === "Escape") this.dismissCopyMenu();
+    };
+    // Defer so the opening contextmenu/mousedown does not close it instantly.
+    this.copyMenuTimer = this.win.setTimeout(() => {
+      this.copyMenuTimer = undefined;
+      // The menu may have been dismissed while this timer was pending.
+      if (this.copyMenu !== menu) return;
+      doc.addEventListener("mousedown", dismiss, true);
+      doc.addEventListener("blur", onBlur, true);
+      doc.addEventListener("keydown", onKeyDown);
+      menu.dataset.dismiss = "1";
+      this.copyMenuDismiss = () => {
+        doc.removeEventListener("mousedown", dismiss, true);
+        doc.removeEventListener("blur", onBlur, true);
+        doc.removeEventListener("keydown", onKeyDown);
+      };
+    });
+  }
+
+  private copyMenu?: HTMLDivElement;
+  private copyMenuDismiss?: () => void;
+  private copyMenuTimer?: number;
+
+  private dismissCopyMenu() {
+    if (this.copyMenuTimer !== undefined) {
+      this.win.clearTimeout(this.copyMenuTimer);
+      this.copyMenuTimer = undefined;
+    }
+    this.copyMenuDismiss?.();
+    this.copyMenuDismiss = undefined;
+    this.copyMenu?.remove();
+    this.copyMenu = undefined;
+  }
 }
 
 /**
@@ -1315,6 +1721,66 @@ function needsQuestion(template: string, quoted?: string) {
   const keys = templateKeys(template);
   if (!keys.has("input")) return false;
   return !(keys.has("selection") && (quoted || getPDFSelection()));
+}
+
+/**
+ * Extract readable text from a rendered answer, preserving the line breaks
+ * that textContent would drop between paragraphs, list items, code and rows.
+ */
+function extractText(root: HTMLElement): string {
+  const BLOCK = new Set([
+    "p",
+    "div",
+    "section",
+    "article",
+    "header",
+    "footer",
+    "li",
+    "tr",
+    "pre",
+    "blockquote",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "ul",
+    "ol",
+    "table",
+    "hr",
+    "details",
+    "summary",
+  ]);
+  const parts: string[] = [];
+  const walk = (node: Node) => {
+    if (node.nodeType === 3 /* TEXT_NODE */) {
+      parts.push(node.nodeValue || "");
+      return;
+    }
+    if (node.nodeType !== 1) return;
+    const el = node as HTMLElement;
+    const tag = el.localName;
+    if (tag === "br") {
+      parts.push("\n");
+      return;
+    }
+    const isBlock = BLOCK.has(tag);
+    if (isBlock) parts.push("\n");
+    if (tag === "li") parts.push("• ");
+    if (tag === "td" || tag === "th") parts.push("\t");
+    for (let i = 0; i < el.childNodes.length; i++) {
+      const child = el.childNodes.item(i);
+      if (child) walk(child);
+    }
+    if (isBlock) parts.push("\n");
+  };
+  walk(root);
+  return parts
+    .join("")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function previewQuote(text: string) {
@@ -1351,6 +1817,12 @@ function formatSessionTime(value: string) {
 const QUOTE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 4h10M3 8h10M3 12h6"/></svg>`;
 
 const SEND_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 12.5V3.5"/><path d="M4.5 7 8 3.5 11.5 7"/></svg>`;
+
+const COPY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="9" rx="1.6"/><path d="M10.5 5.5v-2A1.6 1.6 0 0 0 8.9 1.9H3.6A1.6 1.6 0 0 0 2 3.5v5.3a1.6 1.6 0 0 0 1.6 1.6h2"/></svg>`;
+
+const CHECK_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4.5"/></svg>`;
+
+const GLOSSARY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14.5A1.5 1.5 0 0 1 2.5 13V3a1.5 1.5 0 0 1 1.5-1.5H13.5v11H4.5A1.5 1.5 0 0 0 3 14z"/><path d="M4 12.5h9.5"/><path d="M6.5 5h3M6.5 7.5h5"/></svg>`;
 
 function contextMode(): ContextMode {
   const mode = String(getPref("chat.contextMode") || "");

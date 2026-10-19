@@ -109,6 +109,19 @@ store.selectSession("1/PAPER", legacyId);
 store.updatePending("1/PAPER", second.id, "streamed", "reasoning");
 assert.equal(store.active("1/PAPER").pending, undefined);
 assert.equal(second.pending.text, "streamed");
+store.setPendingStage("1/PAPER", second.id, "translating");
+assert.equal(second.pending.stage, "translating");
+store.updatePending("1/PAPER", second.id, "draft text", "draft reasoning");
+store.setPendingStage("1/PAPER", second.id, "reviewing");
+assert.equal(
+  second.pending.text,
+  "",
+  "a phase change clears the previous phase's output",
+);
+assert.equal(second.pending.reasoning, "");
+store.updatePending("1/PAPER", second.id, "review text", "review reasoning");
+store.setPendingStage("1/PAPER", second.id, "reviewing");
+assert.equal(second.pending.text, "review text", "same stage keeps the stream");
 assert.equal(
   store.deleteSession("1/PAPER", second.id),
   false,
@@ -198,6 +211,8 @@ const { runner } = await load("src/modules/runner.ts", {
   "../utils/config": { DEFAULT_SYSTEM_PROMPT: "System" },
   "../utils/history": history,
   "../utils/translation": { splitTranslationSource },
+  "./translation": { withGlossary: (prompt) => prompt },
+  "./glossary": { glossary: { snapshot: async () => ({ match: () => [] }) } },
   "./conversations": { conversations: runStore },
   "./settings": {
     readActiveConfig: () => ({
@@ -255,6 +270,8 @@ const { runner: translationRunner } = await load("src/modules/runner.ts", {
   "../utils/config": { DEFAULT_SYSTEM_PROMPT: "System" },
   "../utils/history": history,
   "../utils/translation": { splitTranslationSource },
+  "./translation": { withGlossary: (prompt) => prompt },
+  "./glossary": { glossary: { snapshot: async () => ({ match: () => [] }) } },
   "./conversations": { conversations: translationStore },
   "./settings": {
     readActiveConfig: () => ({
@@ -315,6 +332,8 @@ const { runner: failureRunner } = await load("src/modules/runner.ts", {
   "../utils/config": { DEFAULT_SYSTEM_PROMPT: "System" },
   "../utils/history": history,
   "../utils/translation": { splitTranslationSource },
+  "./translation": { withGlossary: (prompt) => prompt },
+  "./glossary": { glossary: { snapshot: async () => ({ match: () => [] }) } },
   "./conversations": { conversations: failureStore },
   "./settings": {
     readActiveConfig: () => ({

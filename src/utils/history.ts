@@ -18,7 +18,124 @@ export type Turn = {
   reasoning?: string;
   /** Local record of the user message sent with this turn, capped in size. */
   source?: { text: string; truncated: boolean };
+  /**
+   * Present on a translation answer. Not sent back to the model: history
+   * replay uses `content` only. `draft` is the first pass when `content` is
+   * a later review.
+   */
+  translation?: TranslationInfo;
 };
+
+export type TranslationMode = "quick" | "collaborative" | "review";
+export type TranslationStatus =
+  "draft" | "reviewed" | "review-failed" | "stopped" | "incomplete";
+
+export type TranslationInfo = {
+  mode: TranslationMode;
+  /** Original text. A truncated copy is never a valid review source. */
+  source: string;
+  sourceTruncated?: boolean;
+  status: TranslationStatus;
+  draft?: string;
+  /** Model id only. Keys and request URLs are never stored here. */
+  translator?: string;
+  reviewer?: string;
+  /** Short text already localized for display. Not part of the answer. */
+  warning?: string;
+};
+
+/** Stored source and draft cap. Longer sources are kept only as a prefix. */
+export const TRANSLATION_TEXT_LIMIT = 100_000;
+
+const TRANSLATION_MODES = new Set<TranslationMode>([
+  "quick",
+  "collaborative",
+  "review",
+]);
+const TRANSLATION_STATUSES = new Set<TranslationStatus>([
+  "draft",
+  "reviewed",
+  "review-failed",
+  "stopped",
+  "incomplete",
+]);
+
+function clip(value: string, max: number) {
+  return value.length > max ? value.slice(0, max) : value;
+}
+
+/** `null` means the field was present but not a string. */
+function optionalText(value: unknown, max: number): string | undefined | null {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") return null;
+  const text = clip(value, max);
+  return text ? text : undefined;
+}
+
+function storedTranslation(info: TranslationInfo): TranslationInfo {
+  const sourceTruncated =
+    Boolean(info.sourceTruncated) ||
+    info.source.length > TRANSLATION_TEXT_LIMIT;
+  const draft = info.draft
+    ? clip(info.draft, TRANSLATION_TEXT_LIMIT)
+    : undefined;
+  const translator = info.translator ? clip(info.translator, 200) : undefined;
+  const reviewer = info.reviewer ? clip(info.reviewer, 200) : undefined;
+  const warning = info.warning ? clip(info.warning, 500) : undefined;
+  return {
+    mode: info.mode,
+    source: clip(info.source, TRANSLATION_TEXT_LIMIT),
+    status: info.status,
+    ...(sourceTruncated ? { sourceTruncated: true } : {}),
+    ...(draft ? { draft } : {}),
+    ...(translator ? { translator } : {}),
+    ...(reviewer ? { reviewer } : {}),
+    ...(warning ? { warning } : {}),
+  };
+}
+
+function readTranslation(value: unknown): TranslationInfo | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const raw = value as Record<string, unknown>;
+  if (!TRANSLATION_MODES.has(raw.mode as TranslationMode)) return undefined;
+  if (typeof raw.source !== "string") return undefined;
+  if (!TRANSLATION_STATUSES.has(raw.status as TranslationStatus)) {
+    return undefined;
+  }
+  if (
+    raw.sourceTruncated !== undefined &&
+    typeof raw.sourceTruncated !== "boolean"
+  ) {
+    return undefined;
+  }
+  const draft = optionalText(raw.draft, TRANSLATION_TEXT_LIMIT);
+  const translator = optionalText(raw.translator, 200);
+  const reviewer = optionalText(raw.reviewer, 200);
+  const warning = optionalText(raw.warning, 500);
+  if (
+    draft === null ||
+    translator === null ||
+    reviewer === null ||
+    warning === null
+  ) {
+    return undefined;
+  }
+  const sourceTruncated =
+    raw.sourceTruncated === true || raw.source.length > TRANSLATION_TEXT_LIMIT;
+  return {
+    mode: raw.mode as TranslationMode,
+    source: clip(raw.source, TRANSLATION_TEXT_LIMIT),
+    status: raw.status as TranslationStatus,
+    ...(sourceTruncated ? { sourceTruncated: true } : {}),
+    ...(draft ? { draft } : {}),
+    ...(translator ? { translator } : {}),
+    ...(reviewer ? { reviewer } : {}),
+    ...(warning ? { warning } : {}),
+  };
+}
 
 export const HISTORY_VERSION = 1;
 
@@ -63,11 +180,12 @@ export function serializeConversation(label: string, turns: Turn[]) {
       version: HISTORY_VERSION,
       label,
       updatedAt: new Date().toISOString(),
-      turns: turns.map(({ role, content, display, source }) => ({
+      turns: turns.map(({ role, content, display, source, translation }) => ({
         role,
         content,
         ...(display === undefined ? {} : { display }),
         ...(source === undefined ? {} : { source }),
+        ...(translation ? { translation: storedTranslation(translation) } : {}),
       })),
     },
     null,
@@ -95,12 +213,17 @@ export function parseConversation(raw: string): Turn[] | undefined {
       typeof turn.source.truncated === "boolean"
         ? { text: turn.source.text, truncated: turn.source.truncated }
         : undefined;
+    // Invalid metadata is dropped. The text stays, and review stays refused
+    // because there is no trustworthy source. A bad field does not reject
+    // the rest of the file.
+    const translation = readTranslation(turn.translation);
     return [
       {
         role: turn.role,
         content: turn.content,
         ...(typeof turn.display === "string" ? { display: turn.display } : {}),
         ...(source ? { source } : {}),
+        ...(translation ? { translation } : {}),
       },
     ];
   });

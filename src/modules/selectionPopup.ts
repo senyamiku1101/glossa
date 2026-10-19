@@ -9,11 +9,13 @@ import {
 } from "./pdfParagraph";
 import { getPdfLayoutParagraph } from "./pdfLayout";
 import { runner } from "./runner";
+import { getProfiles } from "./settings";
+import { openGlossaryEditor } from "./glossaryUI";
 import { offerSelection, revealSidebar } from "./sidebar";
 import { TRANSLATE_TEMPLATE } from "./tags";
 
 type PopupEvent = _ZoteroTypes.Reader.EventParams<"renderTextSelectionPopup">;
-type SelectionAction = "translate" | "explain";
+type SelectionAction = "translate" | "collaborative" | "explain";
 type SelectionScope = "selection" | "paragraph";
 
 // Remember the last choice while Zotero is open; changing it never sends a request.
@@ -86,7 +88,7 @@ function actionRow(
   const select = doc.createElement("select");
   select.className = "glossa-selection-action";
   select.setAttribute("aria-label", getString("selection-action"));
-  for (const action of ["translate", "explain"] as const) {
+  for (const action of ["translate", "collaborative", "explain"] as const) {
     const option = doc.createElement("option");
     option.value = action;
     option.textContent = getString("selection-" + action);
@@ -102,6 +104,12 @@ function actionRow(
   paragraphSend.type = "button";
   paragraphSend.className = "glossa-selection-send glossa-selection-paragraph";
   paragraphSend.textContent = getString("selection-paragraph-button");
+  const glossaryAdd = doc.createElement("button");
+  glossaryAdd.type = "button";
+  glossaryAdd.className = "glossa-selection-glossary";
+  glossaryAdd.innerHTML = GLOSSARY_SVG;
+  glossaryAdd.title = getString("glossary-add");
+  glossaryAdd.setAttribute("aria-label", getString("glossary-add"));
   const status = doc.createElement("div");
   status.className = "glossa-selection-status";
   status.hidden = true;
@@ -213,13 +221,18 @@ function actionRow(
   };
   select.addEventListener("change", () => {
     if (!holder.isConnected) return;
-    lastAction = select.value === "explain" ? "explain" : "translate";
+    lastAction = toAction(select.value);
     updateLabel();
   });
-  // Preserve the PDF selection when the pointer presses a send button.
+  // Preserve the PDF selection when the pointer presses a button in the row.
   // Keyboard activation still uses the button's normal Enter/Space behavior.
-  for (const button of [send, paragraphSend])
+  for (const button of [send, paragraphSend, glossaryAdd])
     button.addEventListener("mousedown", (event) => event.preventDefault());
+  // The editor is a real dialog window: it stays up when this popup closes.
+  glossaryAdd.addEventListener("click", () => {
+    if (!holder.isConnected) return;
+    void openGlossaryEditor({ source: selection });
+  });
   const submit = async (requestedScope: SelectionScope) => {
     if (!holder.isConnected) return;
     // Check readiness as well as the DOM property, so synthetic clicks cannot
@@ -233,10 +246,20 @@ function actionRow(
       status.hidden = false;
       return;
     }
-    const action = select.value === "explain" ? "explain" : "translate";
+    const action = toAction(select.value);
+    // Collaborative translation needs two profiles; stop early and say why
+    // instead of failing after a paragraph scan.
+    if (action === "collaborative") {
+      const problem = collaborativeProfileProblem();
+      if (problem) {
+        showStatus(getString(problem));
+        return;
+      }
+    }
     const name = getString("selection-" + action);
     const template =
-      action === "translate" ? TRANSLATE_TEMPLATE : EXPLAIN_TEMPLATE;
+      action === "explain" ? EXPLAIN_TEMPLATE : TRANSLATE_TEMPLATE;
+    const mode = action === "collaborative" ? "collaborative" : "quick";
     select.disabled = true;
     sending = true;
     updateSendState();
@@ -276,13 +299,18 @@ function actionRow(
             snapshot,
             input,
           );
-          if (action === "translate" && requestedScope === "paragraph") {
+          if (action !== "explain" && requestedScope === "paragraph") {
             rendered.translation = {
               source: input,
               promptFor: async (piece) =>
                 (await renderTemplate(template, "", current, snapshot, piece))
                   .prompt,
             };
+          }
+          // Record the real source so the saved turn can be reviewed later.
+          // Explain and arbitrary prompts are not marked as translations.
+          if (action !== "explain") {
+            rendered.translationRequest = { mode, source: input };
           }
           return rendered;
         },
@@ -306,7 +334,7 @@ function actionRow(
   paragraphSend.addEventListener("click", () => submit("paragraph"));
   updateLabel();
   updateSendState();
-  row.append(select, send, paragraphSend);
+  row.append(select, send, paragraphSend, glossaryAdd);
   holder.append(style, row, status);
   // Reader append() may mount asynchronously. Recognition may fill this
   // detached DOM, but must not send or change sidebar state while detached.
@@ -318,6 +346,28 @@ function actionRow(
 function preview(text: string) {
   const flat = text.replace(/\s+/g, " ");
   return flat.length > 48 ? flat.slice(0, 48) + "…" : flat;
+}
+
+function toAction(value: string): SelectionAction {
+  return value === "collaborative" || value === "explain" ? value : "translate";
+}
+
+/**
+ * A draft and a review profile are required for collaborative translation.
+ * Returns the localization id of the problem, or undefined when both resolve.
+ */
+function collaborativeProfileProblem() {
+  const draft = String(getPref("translation.draftProfile") || "");
+  const review = String(getPref("translation.reviewProfile") || "");
+  if (!draft || !review) return "translation-config-missing";
+  const profiles = getProfiles();
+  if (
+    !profiles.some((p) => p.id === draft) ||
+    !profiles.some((p) => p.id === review)
+  ) {
+    return "translation-profile-missing";
+  }
+  return undefined;
 }
 
 const EXPLAIN_TEMPLATE = `请用简体中文详细解释下面选中的文献段落，帮助读者理解原理与论证。
@@ -338,6 +388,9 @@ const EXPLAIN_TEMPLATE = `请用简体中文详细解释下面选中的文献段
 const SEND_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 16V4M4.5 9.5 10 4l5.5 5.5"/></svg>';
 
+const GLOSSARY_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14.5A1.5 1.5 0 0 1 2.5 13V3a1.5 1.5 0 0 1 1.5-1.5H13.5v11H4.5A1.5 1.5 0 0 0 3 14z"/><path d="M4 12.5h9.5"/><path d="M7 5.5h3M8.5 4v3"/></svg>';
+
 const TOOLBAR_STYLE = `
 .glossa-selection-panel {
   --glossa-selection-accent: #276b5a;
@@ -355,7 +408,7 @@ const TOOLBAR_STYLE = `
 .glossa-selection-actions {
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 32px auto;
+  grid-template-columns: minmax(0, 1fr) 32px auto auto;
   align-items: center;
   gap: 6px;
   width: 100%;
@@ -405,6 +458,31 @@ const TOOLBAR_STYLE = `
   color: var(--glossa-selection-disabled-text);
   opacity: 1;
   cursor: default;
+}
+/* Add-to-glossary: same hit area as send, but a quiet outline button since it
+   only opens a local editor and never sends a request. */
+.glossa-selection-glossary {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--glossa-selection-border);
+  border-radius: 8px;
+  color: var(--glossa-selection-text);
+  background: transparent;
+  cursor: pointer;
+}
+.glossa-selection-glossary svg { display: block; }
+.glossa-selection-glossary:hover:not(:disabled) {
+  border-color: var(--glossa-selection-accent);
+  color: var(--glossa-selection-accent);
+}
+.glossa-selection-glossary:focus-visible {
+  outline: 2px solid var(--glossa-selection-accent);
+  outline-offset: 2px;
 }
 .glossa-selection-action:disabled { opacity: 0.5; cursor: default; }
 .glossa-selection-send:focus-visible,

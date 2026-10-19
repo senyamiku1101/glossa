@@ -33,6 +33,8 @@ declare namespace _ZoteroTypes {
       "tags": string;
       "profiles": string;
       "profiles.active": string;
+      "translation.draftProfile": string;
+      "translation.reviewProfile": string;
     };
   }
 }

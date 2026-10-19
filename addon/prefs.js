@@ -24,3 +24,5 @@ pref("reader.popupScope", "selection");
 pref("tags", "");
 pref("profiles", "[]");
 pref("profiles.active", "");
+pref("translation.draftProfile", "");
+pref("translation.reviewProfile", "");

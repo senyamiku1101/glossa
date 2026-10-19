@@ -5,6 +5,7 @@ import { createZToolkit } from "./utils/ztoolkit";
 import { chat } from "./modules/chat";
 import { disposeChatViews, initChatViews } from "./modules/chatView";
 import { conversations } from "./modules/conversations";
+import { disposeGlossaryWindows } from "./modules/glossaryUI";
 import { runner } from "./modules/runner";
 import { initPreferencesPane } from "./modules/preferences";
 import {
@@ -56,6 +57,7 @@ function onShutdown() {
   unregisterSidebar();
   unregisterSelectionPopup();
   disposeChatViews();
+  disposeGlossaryWindows();
   conversations.dispose();
   ztoolkit.unregisterAll();
   addon.data.alive = false;

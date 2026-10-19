@@ -29,6 +29,12 @@ export type RenderedPrompt = {
     source: string;
     promptFor: (piece: string) => Promise<string>;
   };
+  /**
+   * Local metadata for a real translation. Quick keeps the existing single
+   * request; collaborative is the only mode that adds a review pass.
+   * `source` is the text itself, never the rendered prompt.
+   */
+  translationRequest?: { mode: "quick" | "collaborative"; source: string };
 };
 
 /**

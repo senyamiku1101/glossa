@@ -559,12 +559,38 @@
   background: var(--glossa-paper);
   box-shadow: 0 2px 8px rgba(29, 70, 52, 0.035);
 }
-.glossa-answer-label {
+.glossa-answer-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin-bottom: 9px;
+}
+.glossa-answer-label {
   color: var(--glossa-accent);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.09em;
+}
+.glossa-copy-answer {
+  width: 24px;
+  height: 24px;
+  color: var(--glossa-muted);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.glossa-answer-card:hover .glossa-copy-answer,
+.glossa-answer-card:focus-within .glossa-copy-answer,
+.glossa-copy-answer.glossa-copied {
+  opacity: 1;
+}
+@media (hover: none) {
+  .glossa-copy-answer {
+    opacity: 1;
+  }
+}
+.glossa-copy-answer.glossa-copied {
+  color: var(--glossa-accent);
 }
 .glossa-answer-card .glossa-msg {
   margin-bottom: 0;
@@ -973,4 +999,210 @@ item-details.glossa-workspace-active item-pane-header {
 .glossa-chat button:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+/* Right-click "Copy" for selected answer text (Zotero chrome has no native
+   copy menu for plain text). */
+.glossa-context-menu {
+  position: fixed;
+  z-index: 2147483647;
+  min-width: 96px;
+  padding: 4px;
+  background: var(--material-background, #fff);
+  color: var(--fill-primary, #111);
+  border: 1px solid var(--material-panedivider, #d0d0d0);
+  border-radius: 7px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.2);
+  font-family: system-ui, sans-serif;
+  font-size: 12px;
+}
+.glossa-context-item {
+  display: block;
+  width: 100%;
+  padding: 5px 12px;
+  text-align: start;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  font: inherit;
+  cursor: pointer;
+}
+.glossa-context-item:hover,
+.glossa-context-item:focus-visible {
+  background: var(--fill-quinary, #eceff1);
+  outline: none;
+}
+@media (prefers-color-scheme: dark) {
+  .glossa-context-menu {
+    background: var(--material-background, #2b2b2b);
+    color: var(--fill-primary, #eee);
+    border-color: var(--material-panedivider, #484848);
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.55);
+  }
+  .glossa-context-item:hover,
+  .glossa-context-item:focus-visible {
+    background: var(--fill-quinary, #3d3d3d);
+  }
+}
+
+/* Translation metadata under an answer card: status chip, the models used,
+   an optional warning, the folded draft, and the review action. */
+.glossa-translation-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--glossa-border);
+  font-size: 11px;
+  color: var(--glossa-muted);
+}
+.glossa-translation-chip {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--glossa-border);
+  border-radius: 999px;
+  color: var(--glossa-accent);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.glossa-translation-chip.glossa-tl-review-failed,
+.glossa-translation-chip.glossa-tl-incomplete,
+.glossa-translation-chip.glossa-tl-stopped {
+  color: var(--glossa-error);
+  border-color: var(--glossa-error);
+}
+.glossa-translation-model {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.glossa-translation-review {
+  flex: none;
+  margin-inline-start: auto;
+  padding: 3px 10px;
+  color: var(--glossa-fg);
+  background: var(--glossa-tint);
+  border: 1px solid var(--glossa-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.glossa-translation-review:hover:not(:disabled) {
+  border-color: var(--glossa-accent);
+}
+.glossa-translation-review:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.glossa-translation-warning {
+  flex-basis: 100%;
+  color: var(--glossa-muted);
+  line-height: 1.45;
+}
+.glossa-translation-draft {
+  flex-basis: 100%;
+}
+.glossa-translation-draft summary {
+  cursor: pointer;
+  color: var(--glossa-accent);
+  font-weight: 600;
+}
+.glossa-translation-draft-body {
+  max-height: 240px;
+  margin-top: 5px;
+  padding: 8px 10px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--glossa-border);
+  border-radius: 6px;
+  background: var(--glossa-tint);
+  color: var(--glossa-fg);
+  font-size: 12px;
+  line-height: 1.5;
+  -moz-user-select: text;
+  user-select: text;
+}
+
+/* Glossary dialogs (editor + manager). These run in a separate chrome
+   window that links this stylesheet in, so they keep the same theme
+   variables instead of depending on the chat pane. */
+.glossa-glossary-field,
+.glossa-glossary-search {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 300px;
+  margin: 4px 12px;
+}
+.glossa-glossary-field label {
+  font-weight: 600;
+  font-size: 12px;
+}
+.glossa-glossary-field input,
+.glossa-glossary-search input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--material-panedivider, #d0d0d0);
+  border-radius: 7px;
+  font: inherit;
+}
+.glossa-glossary-status {
+  min-height: 16px;
+  margin: 2px 12px 4px;
+  color: var(--fill-secondary, #a33);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.glossa-glossary-status:empty {
+  min-height: 0;
+}
+.glossa-glossary-list {
+  min-width: 380px;
+  max-width: 560px;
+  max-height: 60vh;
+  min-height: 80px;
+  margin: 4px 12px;
+  overflow: auto;
+  border: 1px solid var(--material-panedivider, #d0d0d0);
+  border-radius: 8px;
+}
+.glossa-glossary-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--material-panedivider, #e5e5e5);
+  font-size: 12px;
+}
+.glossa-glossary-row:last-child {
+  border-bottom: 0;
+}
+.glossa-glossary-source {
+  flex: 0 0 40%;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+.glossa-glossary-target {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--fill-secondary, #666);
+}
+.glossa-glossary-edit,
+.glossa-glossary-delete {
+  flex: none;
+  padding: 2px 8px;
+}
+.glossa-glossary-delete {
+  color: var(--fill-red, #a33);
 }

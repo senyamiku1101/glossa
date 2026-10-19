@@ -75,6 +75,7 @@ function harness(extract, options = {}) {
     asks = [],
     rendered = [],
     calls = [],
+    glossaryOpens = [],
     preferenceWrites = [];
   const preferences = { ...defaultPrefs, ...options.preferences };
   const setPreference = (key, value) => {
@@ -135,6 +136,10 @@ function harness(extract, options = {}) {
       revealSidebar: () => {},
     },
     "./tags": { TRANSLATE_TEMPLATE: "test translation" },
+    "./settings": { getProfiles: () => [] },
+    "./glossaryUI": {
+      openGlossaryEditor: (request) => glossaryOpens.push(request),
+    },
   };
   const module = { exports: {} };
   runInNewContext(popup, {
@@ -182,6 +187,7 @@ function harness(extract, options = {}) {
     asks,
     rendered,
     calls,
+    glossaryOpens,
     preferences,
     preferenceWrites,
     rects,
@@ -191,6 +197,9 @@ function harness(extract, options = {}) {
     send: elements.find((el) => el.className === "glossa-selection-send"),
     paragraphSend: elements.find((el) =>
       el.className?.includes("glossa-selection-paragraph"),
+    ),
+    glossary: elements.find(
+      (el) => el.className === "glossa-selection-glossary",
     ),
     status: elements.find((el) => el.className === "glossa-selection-status"),
   };
@@ -234,6 +243,7 @@ assert.deepEqual(selectionDefault.row.children, [
   selectionDefault.action,
   selectionDefault.send,
   selectionDefault.paragraphSend,
+  selectionDefault.glossary,
 ]);
 assert.ok(
   !selectionDefault.elements.some(
@@ -246,10 +256,7 @@ assert.ok(!selectionDefault.elements.some((el) => el.textContent === "Glossa"));
 const css = selectionDefault.elements.find(
   (el) => el.tag === "style",
 ).textContent;
-assert.match(
-  css,
-  /grid-template-columns:\s*minmax\(0, 1fr\) 32px auto/,
-);
+assert.match(css, /grid-template-columns:\s*minmax\(0, 1fr\) 32px auto auto/);
 assert.ok(!css.includes("grid-column: 1 / -1"));
 const disabledRule = css.match(
   /\.glossa-selection-send:disabled\s*\{([^}]+)\}/,
@@ -306,9 +313,16 @@ for (const text of ["", " \t\n", null, undefined]) {
   assert.equal(empty.calls.length, 0);
 }
 await settle();
-assert.match(selectionDefault.status.textContent, /^selection-paragraph-ready:/);
+assert.match(
+  selectionDefault.status.textContent,
+  /^selection-paragraph-ready:/,
+);
 assertParagraphReady(selectionDefault, true);
-assert.equal(selectionDefault.asks.length, 0, "recognition must never send by itself");
+assert.equal(
+  selectionDefault.asks.length,
+  0,
+  "recognition must never send by itself",
+);
 await selectionDefault.send.fire("click");
 assert.equal(selectionDefault.calls.length, 1);
 assert.equal(selectionDefault.asks[0].built.prompt, "selected few words");
@@ -320,10 +334,39 @@ assert.equal(
 assert.equal(selectionDefault.status.textContent, "popup-saved");
 assertSendReady(selectionDefault, true);
 assertParagraphReady(selectionDefault, true);
+assert.equal(selectionDefault.glossary["aria-label"], "glossary-add");
+await selectionDefault.glossary.fire("click");
+assert.equal(
+  selectionDefault.glossaryOpens.length,
+  1,
+  "the glossary button opens the local editor",
+);
+assert.equal(
+  selectionDefault.glossaryOpens[0].source,
+  "selected few words",
+  "the editor starts from the current selection",
+);
+assert.equal(
+  selectionDefault.calls.length,
+  1,
+  "opening the glossary must not rescan",
+);
+assert.equal(
+  selectionDefault.asks.length,
+  1,
+  "opening the glossary must not send",
+);
 await selectionDefault.action.fire("change");
-assert.equal(selectionDefault.asks.length, 1, "changing the action must not send");
+assert.equal(
+  selectionDefault.asks.length,
+  1,
+  "changing the action must not send",
+);
 assert.match(selectionDefault.send.title, /^selection-send:/);
-assert.match(selectionDefault.paragraphSend.title, /^selection-send-paragraph:/);
+assert.match(
+  selectionDefault.paragraphSend.title,
+  /^selection-send-paragraph:/,
+);
 
 const crossing = {
   kind: "unmatched",
@@ -333,13 +376,24 @@ const changed = harness(() => crossing);
 assertSendReady(changed, true);
 assertParagraphReady(changed, false);
 await settle();
-assert.equal(changed.status.textContent, "selection-paragraph-crosses-boundary");
+assert.equal(
+  changed.status.textContent,
+  "selection-paragraph-crosses-boundary",
+);
 assertParagraphReady(changed, false, "failed paragraph stays gray");
-assertSendReady(changed, true, "selection send stays available after paragraph failure");
+assertSendReady(
+  changed,
+  true,
+  "selection send stays available after paragraph failure",
+);
 assert.equal(changed.asks.length, 0);
 assert.match(changed.paragraphSend.title, /^selection-send-paragraph:/);
 await changed.paragraphSend.fire("click");
-assert.equal(changed.calls.length, 1, "a disabled paragraph click must not retry");
+assert.equal(
+  changed.calls.length,
+  1,
+  "a disabled paragraph click must not retry",
+);
 assert.equal(changed.asks.length, 0);
 changed.paragraphSend.disabled = false;
 await changed.paragraphSend.fire("click");
@@ -374,7 +428,8 @@ for (const failure of [
   assert.equal(failed.status.textContent, diagnosis);
   assertParagraphReady(failed, false);
   assert.equal(failed.action.disabled, false);
-  if (failure?.kind === "ready") assert.match(diagnosis, /paragraph-text-empty/);
+  if (failure?.kind === "ready")
+    assert.match(diagnosis, /paragraph-text-empty/);
   if (failure?.multiParagraph && failure.kind === "unmatched")
     assert.match(diagnosis, /^selection-paragraph-multi-unmatched/);
 }
@@ -392,7 +447,11 @@ assert.equal(rejected.asks.length, 0);
 const newlySelected = harness(() => ({ kind: "ready", text: whole }));
 assertParagraphReady(newlySelected, false);
 await settle();
-assertParagraphReady(newlySelected, true, "a fresh popup reads the paragraph again");
+assertParagraphReady(
+  newlySelected,
+  true,
+  "a fresh popup reads the paragraph again",
+);
 assert.equal(newlySelected.asks.length, 0);
 
 const twoParagraphs =
@@ -420,7 +479,11 @@ assert.equal(ready.offers.at(-1)[1], twoParagraphs);
 assert.ok(ready.asks[0].display.includes("selection-scope-paragraph"));
 assertParagraphReady(ready, true);
 await ready.paragraphSend.fire("click");
-assert.equal(ready.calls.length, 1, "a confirmed paragraph is not extracted again");
+assert.equal(
+  ready.calls.length,
+  1,
+  "a confirmed paragraph is not extracted again",
+);
 assert.equal(ready.asks.length, 2);
 
 const sendPending = deferred();
@@ -431,9 +494,17 @@ await eager.paragraphSend.fire("click");
 sendPending.resolve({ kind: "ready", text: twoParagraphs, paragraphs: 2 });
 await settle();
 assertParagraphReady(eager, true);
-assert.equal(eager.asks.length, 0, "a paragraph click while detecting must not queue a send");
+assert.equal(
+  eager.asks.length,
+  0,
+  "a paragraph click while detecting must not queue a send",
+);
 await eager.paragraphSend.fire("click");
-assert.equal(eager.asks.length, 1, "only a click after confirmation may submit the paragraph");
+assert.equal(
+  eager.asks.length,
+  1,
+  "only a click after confirmation may submit the paragraph",
+);
 
 for (const clickParagraph of [false, true]) {
   const pending = deferred();
@@ -454,7 +525,9 @@ for (const result of [
   { kind: "unmatched", multiParagraph: true },
 ]) {
   const pending = deferred();
-  const delayedMount = harness(() => pending.promise, { initiallyConnected: false });
+  const delayedMount = harness(() => pending.promise, {
+    initiallyConnected: false,
+  });
   assertSendReady(delayedMount, true);
   assertParagraphReady(delayedMount, false);
   const offersBefore = delayedMount.offers.length;
@@ -462,11 +535,18 @@ for (const result of [
   await settle();
   assert.equal(delayedMount.asks.length, 0);
   assert.equal(delayedMount.offers.length, offersBefore);
-  assert.notEqual(delayedMount.status.textContent, "selection-paragraph-loading");
+  assert.notEqual(
+    delayedMount.status.textContent,
+    "selection-paragraph-loading",
+  );
   assert.equal(delayedMount.status.hidden, false);
   assertParagraphReady(delayedMount, result.kind === "ready");
   await delayedMount.paragraphSend.fire("click");
-  assert.equal(delayedMount.asks.length, 0, "detached paragraph send has no external effect");
+  assert.equal(
+    delayedMount.asks.length,
+    0,
+    "detached paragraph send has no external effect",
+  );
   delayedMount.holder.isConnected = true;
   await delayedMount.paragraphSend.fire("click");
   assert.equal(delayedMount.calls.length, 1);
@@ -534,7 +614,6 @@ for (const state of popupHarnesses)
     [],
     "popup actions must never write preferences",
   );
-
 
 // Exercise the real generic preferences binding, with the unrelated preference
 // pane initialization stubbed out. Only the popup-scope control is installed.
@@ -650,5 +729,5 @@ for (const lang of ["zh-CN", "en-US"]) {
   }
 }
 console.log(
-  "Selection popup: gray/green readiness gate, ARIA/theme CSS, no disabled-click sends, scope retry/cache/stale/close safety, send finally, no preference writes, single row and multi-paragraph text passed (mock DOM, not live Zotero)",
+  "Selection popup: gray/green readiness gate, ARIA/theme CSS, no disabled-click sends, scope retry/cache/stale/close safety, send finally, no preference writes, glossary editor shortcut without a request, single row and multi-paragraph text passed (mock DOM, not live Zotero)",
 );

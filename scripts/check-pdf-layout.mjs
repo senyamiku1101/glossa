@@ -860,7 +860,11 @@ const captionItems = [
     bold: true,
   },
   ...[
-    [82, 450, "The wall pressure was predicted across the fan face and highlight plane."],
+    [
+      82,
+      450,
+      "The wall pressure was predicted across the fan face and highlight plane.",
+    ],
     [72, 450, "Further observations stay inside this same acoustic paragraph."],
     [72, 450, "Another full line keeps the justified edge of this body."],
     [72, 280, "The paragraph ends with this shorter conclusion."],

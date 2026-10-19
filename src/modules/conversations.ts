@@ -10,7 +10,13 @@ import {
   type Turn,
 } from "../utils/history";
 
-export type Pending = { display: string; text: string; reasoning: string };
+export type Pending = {
+  display: string;
+  text: string;
+  reasoning: string;
+  /** Set only while a collaborative draft or a review is streaming. */
+  stage?: "translating" | "reviewing";
+};
 export type Session = SessionRecord & {
   pending?: Pending;
   failed?: { display: string; error: string };
@@ -236,6 +242,24 @@ export class ConversationStore {
     pending.text = text;
     pending.reasoning = reasoning;
     this.emit(key, "delta");
+  }
+
+  /** Phase label for the current pending turn. Emits `changed`, not `delta`.
+   * A real phase change clears the previous phase's streamed text so it is
+   * never shown as output of the new phase. */
+  setPendingStage(
+    key: string,
+    id: string,
+    stage: NonNullable<Pending["stage"]>,
+  ) {
+    const pending = this.session(key, id)?.pending;
+    if (!pending) return;
+    if (pending.stage !== stage) {
+      pending.text = "";
+      pending.reasoning = "";
+    }
+    pending.stage = stage;
+    this.emit(key, "changed");
   }
 
   commitPending(key: string, id: string, question: Turn, answer: Turn) {
