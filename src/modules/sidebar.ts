@@ -38,7 +38,7 @@ export function registerSidebar() {
     onInit: ({ body, doc }) => {
       const win = doc.defaultView;
       if (!win) return;
-      const view = new ChatView(win, body, { title: true });
+      const view = new ChatView(win, body, { title: true, board: true });
       view.root.classList.add("glossa-in-pane");
       const section = {
         win,

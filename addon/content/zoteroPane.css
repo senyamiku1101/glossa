@@ -1206,3 +1206,272 @@ item-details.glossa-workspace-active item-pane-header {
 .glossa-glossary-delete {
   color: var(--fill-red, #a33);
 }
+
+/* ---- translation board: a collapsible strip above the chat header.
+   Collapsed it is one row; expanded it keeps its own scroll area so the
+   transcript is never squeezed away. Colours reuse the chat theme vars. */
+
+.glossa-board {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  min-width: 0;
+  max-height: 40%;
+  background: var(--glossa-paper, var(--glossa-bg));
+  border-bottom: 1px solid var(--glossa-border);
+}
+
+.glossa-board-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 8px 3px 10px;
+}
+
+.glossa-board-toggle {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 5px 4px;
+  color: var(--glossa-fg);
+  text-align: start;
+  background: transparent;
+  border: 0;
+  font-size: 12px;
+}
+
+.glossa-board-chevron {
+  flex: none;
+  width: 1em;
+  color: var(--glossa-muted);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.glossa-board-title {
+  flex: none;
+  color: var(--glossa-accent);
+  font-weight: 600;
+}
+
+.glossa-board-count {
+  flex: none;
+  overflow: hidden;
+  color: var(--glossa-muted);
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.glossa-board-clear {
+  flex: none;
+  padding: 3px 9px;
+  color: var(--glossa-fg);
+  background: var(--glossa-bg);
+  border: 1px solid var(--glossa-border);
+  border-radius: 6px;
+  font-size: 11px;
+}
+.glossa-board-clear:hover:not(:disabled) {
+  border-color: var(--glossa-accent);
+}
+
+.glossa-board-list {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: min(38vh, 340px);
+  padding: 0 10px 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.glossa-board-entry {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  background: var(--glossa-bg);
+  border: 1px solid var(--glossa-border);
+  border-radius: 8px;
+}
+
+.glossa-board-text {
+  color: var(--glossa-fg);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -moz-user-select: text;
+  user-select: text;
+}
+
+.glossa-board-text-clamped {
+  max-height: calc(1.5em * 12);
+  overflow: hidden;
+}
+
+.glossa-board-text-toggle {
+  margin-top: 3px;
+  padding: 2px 4px;
+  color: var(--glossa-accent);
+  background: transparent;
+  border: 0;
+  font-size: 11px;
+}
+
+.glossa-board-source {
+  margin-top: 6px;
+}
+.glossa-board-source summary {
+  color: var(--glossa-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.glossa-board-source-body {
+  max-height: 200px;
+  margin-top: 4px;
+  padding: 6px 8px;
+  overflow: auto;
+  color: var(--glossa-fg);
+  background: var(--glossa-tint);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -moz-user-select: text;
+  user-select: text;
+}
+.glossa-board-source-note {
+  margin-top: 3px;
+  color: var(--glossa-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.glossa-board-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+  color: var(--glossa-muted);
+  font-size: 11px;
+}
+
+.glossa-board-paper {
+  flex: 1 1 40%;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  color: var(--glossa-fg);
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
+  font-size: 11px;
+}
+.glossa-board-paper:hover:not(:disabled) {
+  color: var(--glossa-accent);
+  text-decoration: underline;
+}
+.glossa-board-paper:disabled {
+  color: var(--glossa-muted);
+}
+
+.glossa-board-mode {
+  flex: none;
+  max-width: 100%;
+  padding: 1px 7px;
+  overflow: hidden;
+  color: var(--glossa-accent);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid var(--glossa-border);
+  border-radius: 999px;
+}
+.glossa-board-tl-review-failed,
+.glossa-board-tl-incomplete,
+.glossa-board-tl-stopped {
+  color: var(--glossa-error);
+  border-color: var(--glossa-error);
+}
+
+.glossa-board-date {
+  flex: none;
+  color: var(--glossa-muted);
+  white-space: nowrap;
+}
+
+.glossa-board-actions {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  margin-inline-start: auto;
+}
+
+.glossa-board-copy,
+.glossa-board-remove {
+  flex: none;
+  padding: 2px 8px;
+  color: var(--glossa-fg);
+  background: var(--glossa-paper, var(--glossa-bg));
+  border: 1px solid var(--glossa-border);
+  border-radius: 6px;
+  font-size: 11px;
+}
+.glossa-board-copy:hover,
+.glossa-board-remove:hover {
+  border-color: var(--glossa-accent);
+}
+.glossa-board-remove {
+  color: var(--glossa-error);
+}
+.glossa-board-copy.glossa-board-copied {
+  color: var(--glossa-accent);
+  border-color: var(--glossa-accent);
+}
+
+.glossa-board-status {
+  flex: none;
+  padding: 2px 12px 8px;
+  color: var(--glossa-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.glossa-board-status:empty {
+  display: none;
+}
+
+/* Card-level "Add to board" action on translation answers. */
+.glossa-board-add {
+  flex: none;
+  padding: 2px 8px;
+  color: var(--glossa-fg);
+  background: var(--glossa-tint);
+  border: 1px solid var(--glossa-border);
+  border-radius: 6px;
+  font-size: 11px;
+}
+.glossa-board-add:hover:not(:disabled) {
+  border-color: var(--glossa-accent);
+}
+.glossa-board-error {
+  flex-basis: 100%;
+  color: var(--glossa-error);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+/* Narrow panes stack the title above the controls instead of truncating. */
+@media (max-width: 480px) {
+  .glossa-board-list {
+    max-height: 30vh;
+  }
+  .glossa-board-paper {
+    flex-basis: 100%;
+  }
+}

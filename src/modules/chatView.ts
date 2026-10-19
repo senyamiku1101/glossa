@@ -1,6 +1,7 @@
 import { config } from "../../package.json";
 import { getString } from "../utils/locale";
 import { getPref, setPref } from "../utils/prefs";
+import { boardDedupeKey } from "../utils/board";
 import { templateKeys } from "../utils/text";
 import {
   CONTEXT_MODES,
@@ -11,6 +12,12 @@ import {
 } from "./context";
 import { conversations, type StoreEvent } from "./conversations";
 import type { Turn } from "../utils/history";
+import { board, type BoardAddInput } from "./board";
+import {
+  createBoardPanel,
+  parseBoardItemKey,
+  type BoardPanel,
+} from "./boardUI";
 import { openGlossaryManager } from "./glossaryUI";
 import { renderMarkdown } from "./markdown";
 import { getPDFSelection } from "./pdf";
@@ -22,6 +29,8 @@ import { getTags, TRANSLATE_TEMPLATE, type CommandTag } from "./tags";
 export type ChatViewOptions = {
   /** Show "Glossa" in the header; the item pane section has its own. */
   title?: boolean;
+  /** Mount the shared board strip above the header (item-pane sidebar only). */
+  board?: boolean;
   onEscape?: () => void;
   /** Re-resolve the target before sending (the floating panel follows tabs). */
   resolveTarget?: () => Target;
@@ -70,6 +79,10 @@ export class ChatView {
   readonly root: HTMLDivElement;
   private target?: Target;
   private unsubscribe: () => void;
+  private readonly boardPanel?: BoardPanel;
+  private unsubscribeBoard: () => void;
+  private boardButtonKeys = new WeakMap<HTMLButtonElement, string>();
+  private boardErrorTimers = new WeakMap<HTMLElement, number>();
   private frame = 0;
   private fullRenderQueued = false;
   private pendingEls?: PendingElements;
@@ -89,19 +102,36 @@ export class ChatView {
     private readonly options: ChatViewOptions = {},
   ) {
     this.root = this.build(container);
+    // The board strip belongs to the item-pane workspace; the floating chat
+    // still shows "add to board" on cards but does not mount a second panel.
+    if (this.options.board) {
+      this.boardPanel = createBoardPanel(this.win, {
+        onJump: (itemKey) => void this.jumpToItem(itemKey),
+      });
+      this.root.prepend(this.boardPanel.root);
+    }
     this.unsubscribe = conversations.subscribe((event) =>
       this.onStoreEvent(event),
     );
+    // Only button labels change on board events; the transcript is untouched.
+    this.unsubscribeBoard = board.subscribe(() => this.refreshBoardButtons());
     views.add(this);
     this.renderTags();
     this.renderProfiles();
     this.renderMode();
     this.renderAll(true);
+    // The board may finish loading after the first cards were rendered.
+    void board.ensureLoaded().then(
+      () => this.refreshBoardButtons(),
+      () => this.refreshBoardButtons(),
+    );
   }
 
   dispose() {
     this.dismissCopyMenu();
     this.unsubscribe();
+    this.unsubscribeBoard();
+    this.boardPanel?.dispose();
     views.delete(this);
     if (this.frame) this.win.cancelAnimationFrame(this.frame);
     this.frame = 0;
@@ -730,6 +760,8 @@ export class ChatView {
       };
       this.renderPending();
     }
+    // Cards were rebuilt from the store; re-apply current board membership.
+    this.refreshBoardButtons();
     if (follow) out.scrollTop = out.scrollHeight;
   }
 
@@ -918,6 +950,19 @@ export class ChatView {
     const bucket = key ? conversations.get(key) : undefined;
     const reviewDisabled =
       runner.busy || !bucket || !bucket.loaded || !!bucket.storageError;
+    // Only a committed translation with text can be collected; an incomplete
+    // one has no final text. The key follows the final body, so a reviewed
+    // translation gets its own entry.
+    const itemKey = this.key;
+    const boardKey =
+      itemKey && info.status !== "incomplete" && turn.content.trim()
+        ? boardDedupeKey({
+            itemKey,
+            mode: info.mode,
+            translation: turn.content,
+          })
+        : "";
+    const boardAdded = boardKey ? board.has(boardKey) : false;
     const host = ztoolkit.UI.appendElement(
       {
         tag: "div",
@@ -960,6 +1005,52 @@ export class ChatView {
                 },
               ]
             : []),
+          ...(boardKey
+            ? [
+                {
+                  tag: "button",
+                  namespace: "html" as const,
+                  classList: ["glossa-board-add"],
+                  attributes: {
+                    type: "button",
+                  },
+                  properties: {
+                    textContent: getString(
+                      boardAdded ? "board-added" : "board-add",
+                    ),
+                    disabled: boardAdded,
+                  },
+                  listeners: [
+                    {
+                      type: "click",
+                      listener: (ev: Event) =>
+                        void this.addToBoard(
+                          ev.currentTarget as HTMLButtonElement,
+                          {
+                            itemKey: itemKey!,
+                            itemTitle: this.target?.label || "",
+                            translation: {
+                              mode: info.mode,
+                              status: info.status,
+                              source: info.source,
+                              ...(info.sourceTruncated
+                                ? { sourceTruncated: true }
+                                : {}),
+                              ...(info.translator
+                                ? { translator: info.translator }
+                                : {}),
+                              ...(info.reviewer
+                                ? { reviewer: info.reviewer }
+                                : {}),
+                            },
+                            text: turn.content,
+                          },
+                        ),
+                    },
+                  ],
+                },
+              ]
+            : []),
           ...(reviewable
             ? [
                 {
@@ -992,6 +1083,12 @@ export class ChatView {
       },
       card,
     ) as HTMLElement;
+    // The dedupe key ends up in a Set inside the store; keep it off the DOM
+    // attribute so control characters in it are never an attribute concern.
+    const boardButton =
+      host.querySelector<HTMLButtonElement>(".glossa-board-add");
+    if (boardButton && boardKey)
+      this.boardButtonKeys.set(boardButton, boardKey);
     if (info.warning) {
       // `warning` arrives already localized from the store; show it as is.
       ztoolkit.UI.appendElement(
@@ -1050,6 +1147,112 @@ export class ChatView {
       });
     } catch (error) {
       ztoolkit.log("[Glossa] review translation failed", error);
+    }
+  }
+
+  /** Add one committed translation card to the shared board. */
+  private async addToBoard(button: HTMLButtonElement, input: BoardAddInput) {
+    if (button.disabled) return;
+    button.dataset.busy = "1";
+    button.disabled = true;
+    const card = button.closest(".glossa-answer-card");
+    try {
+      // A duplicate is a success too: the same text is already on the board.
+      await board.add(input);
+      button.textContent = getString("board-added");
+      this.clearBoardError(card);
+    } catch (error) {
+      ztoolkit.log("[Glossa] board add failed", error);
+      if (this.root.contains(button)) {
+        button.disabled = false;
+        button.textContent = getString("board-add");
+      }
+      this.showBoardError(card, messageOf(error, "board-save-error"));
+    } finally {
+      delete button.dataset.busy;
+    }
+  }
+
+  /** Board membership changed elsewhere; only the meta rows need updating. */
+  private refreshBoardButtons() {
+    this.root
+      .querySelectorAll<HTMLButtonElement>(".glossa-board-add")
+      .forEach((button: HTMLButtonElement) => {
+        const key = this.boardButtonKeys.get(button);
+        if (!key) return;
+        const added = board.has(key);
+        button.textContent = getString(added ? "board-added" : "board-add");
+        if (added) button.disabled = true;
+        else if (button.dataset.busy !== "1") button.disabled = false;
+      });
+  }
+
+  /** A failed add must stay visible on the card it belongs to. */
+  private showBoardError(card: Element | null, message: string) {
+    if (!card) return;
+    let error = card.querySelector<HTMLElement>(".glossa-board-error");
+    if (!error) {
+      error = this.win.document.createElementNS(
+        "http://www.w3.org/1999/xhtml",
+        "span",
+      ) as HTMLSpanElement;
+      error.className = "glossa-board-error";
+      error.setAttribute("role", "status");
+      const meta = card.querySelector(".glossa-translation-meta");
+      (meta || card).append(error);
+    }
+    error.textContent = message;
+    const node = error;
+    const previous = this.boardErrorTimers.get(node);
+    if (previous) this.win.clearTimeout(previous);
+    const timer = this.win.setTimeout(() => {
+      this.boardErrorTimers.delete(node);
+      if (node.isConnected) node.remove();
+    }, 6000);
+    this.boardErrorTimers.set(node, timer);
+  }
+
+  private clearBoardError(card: Element | null) {
+    const error = card?.querySelector<HTMLElement>(".glossa-board-error");
+    if (!error) return;
+    const timer = this.boardErrorTimers.get(error);
+    if (timer) this.win.clearTimeout(timer);
+    this.boardErrorTimers.delete(error);
+    error.remove();
+  }
+
+  /** Open a board entry's PDF, or select its item when it has no attachment. */
+  private async jumpToItem(itemKey: string) {
+    const parsed = parseBoardItemKey(itemKey);
+    if (!parsed) return;
+    let item = Zotero.Items.getByLibraryAndKey(parsed.libraryID, parsed.key);
+    if (!item) {
+      // After a restart the source item is not in memory yet.
+      try {
+        item = await Zotero.Items.getByLibraryAndKeyAsync(
+          parsed.libraryID,
+          parsed.key,
+        );
+      } catch (error) {
+        ztoolkit.log("[Glossa] board item lookup failed", error);
+        return;
+      }
+    }
+    // A deleted item leaves nothing to jump to; the title is already disabled.
+    if (!item) return;
+    try {
+      const attachment = await item.getBestAttachment();
+      if (attachment) {
+        await Zotero.Reader.open(attachment.id);
+        return;
+      }
+    } catch (error) {
+      ztoolkit.log("[Glossa] board item open failed", error);
+    }
+    try {
+      Zotero.getActiveZoteroPane()?.selectItem(item.id);
+    } catch (error) {
+      ztoolkit.log("[Glossa] board item select failed", error);
     }
   }
 
@@ -1781,6 +1984,14 @@ function extractText(root: HTMLElement): string {
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+/** Store errors already carry a localized message; keep odd ones generic. */
+function messageOf(error: unknown, fallbackKey: string) {
+  const text = String((error as Error)?.message || error || "");
+  return text && text.length < 300 && !text.includes("\n")
+    ? text
+    : getString(fallbackKey);
 }
 
 function previewQuote(text: string) {

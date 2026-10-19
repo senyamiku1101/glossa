@@ -35,6 +35,7 @@ declare namespace _ZoteroTypes {
       "profiles.active": string;
       "translation.draftProfile": string;
       "translation.reviewProfile": string;
+      "board.expanded": boolean;
     };
   }
 }
