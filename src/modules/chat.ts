@@ -1,9 +1,12 @@
 import { config } from "../../package.json";
+import {
+  ensureStylesheet as ensureGlossaStylesheet,
+  STYLESHEET_ID,
+} from "../utils/stylesheet";
 import { ChatView } from "./chatView";
 import { getActiveTarget } from "./context";
 
 const PANEL_ID = `${config.addonRef}-panel`;
-const STYLESHEET_ID = `${config.addonRef}-stylesheet`;
 const LEGACY_MENU_ID = `${config.addonRef}-tools-menu`;
 
 /**
@@ -81,21 +84,7 @@ export class ChatController {
 
   /** Shared by the floating panel and the item pane section. */
   private ensureStylesheet(win: Window) {
-    const doc = win.document;
-    if (doc.getElementById(STYLESHEET_ID)) return;
-    ztoolkit.UI.appendElement(
-      {
-        tag: "link",
-        namespace: "html",
-        id: STYLESHEET_ID,
-        attributes: {
-          rel: "stylesheet",
-          type: "text/css",
-          href: `chrome://${config.addonRef}/content/zoteroPane.css`,
-        },
-      },
-      doc.documentElement as Element,
-    );
+    ensureGlossaStylesheet(win);
   }
 
   private show(win: Window) {

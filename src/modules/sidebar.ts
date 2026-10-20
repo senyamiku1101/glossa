@@ -1,5 +1,6 @@
 import { config } from "../../package.json";
 import { asItem } from "../utils/reader";
+import { ensureStylesheet } from "../utils/stylesheet";
 import { ChatView } from "./chatView";
 import { targetFor, type Target } from "./context";
 import { conversations } from "./conversations";
@@ -38,6 +39,9 @@ export function registerSidebar() {
     onInit: ({ body, doc }) => {
       const win = doc.defaultView;
       if (!win) return;
+      // Every window that mounts a pane needs the stylesheet; the floating
+      // chat also injects it, but a pane can exist before that ever runs.
+      ensureStylesheet(win);
       const view = new ChatView(win, body, { title: true, board: true });
       view.root.classList.add("glossa-in-pane");
       const section = {

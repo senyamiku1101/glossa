@@ -115,11 +115,14 @@ export function createBoardPanel(
 
   function syncStatus() {
     let text = "";
+    const empty =
+      loaded && !loadFailed && !operationError && !board.list().length;
     if (loadFailed) text = loadFailed;
     else if (!loaded) text = getString("board-loading");
     else if (operationError) text = operationError;
-    else if (!board.list().length) text = getString("board-empty");
+    else if (empty) text = getString("board-empty");
     status.textContent = text;
+    status.classList.toggle("glossa-board-empty", empty);
     // The collapsed strip is a single row; status is only useful when open.
     status.hidden = !text || !expanded;
   }
@@ -149,9 +152,10 @@ export function createBoardPanel(
     item.setAttribute("role", "listitem");
     item.dataset.entryId = entry.id;
 
+    // Same rhythm as an answer card: body, footer meta, then folded source.
     item.append(renderTranslation(entry));
-    item.append(renderSource(entry));
     item.append(renderMeta(entry));
+    item.append(renderSource(entry));
     return item;
   }
 
@@ -226,7 +230,9 @@ export function createBoardPanel(
     remove.addEventListener("click", () => void removeEntry(entry, remove));
     actions.append(copy, remove);
 
-    meta.append(paper, mode, date, actions);
+    // Chip first, like the translation footer; the paper title then reads as
+    // the provenance link rather than the leading label.
+    meta.append(mode, paper, date, actions);
     return meta;
   }
 
