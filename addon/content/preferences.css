@@ -193,6 +193,22 @@
   white-space: nowrap;
 }
 
+/* An option label is allowed to wrap; its checkbox must never be squeezed
+   out of the 130px label column by a long label. */
+.glossa-check {
+  min-width: 0;
+  white-space: normal;
+}
+.glossa-check > input[type="checkbox"] {
+  flex: none;
+}
+.glossa-check > span {
+  min-width: 0;
+}
+.glossa-row-off .glossa-field {
+  opacity: 0.55;
+}
+
 .glossa-icon-button {
   min-width: 0;
   padding-inline: 8px;

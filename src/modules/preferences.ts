@@ -22,6 +22,8 @@ import {
   stripEndpointUrl,
 } from "../utils/protocol";
 import { listModels, testConnection, type TestKind } from "./llm";
+import { glossary } from "./glossary";
+import { openGlossaryManager } from "./glossaryUI";
 import {
   applyProfile,
   deleteProfile,
@@ -74,6 +76,7 @@ class PreferencesPane {
     this.initTranslationProfiles();
     this.initTest();
     this.initStorage();
+    this.initGlossary();
     initTagEditor(this.doc);
     this.refreshDerived();
     this.win.addEventListener("unload", () => this.dispose(), { once: true });
@@ -199,9 +202,9 @@ class PreferencesPane {
       }
     }
     Zotero.Prefs.set(`${PREFIX}.${key}`, value, true);
-    // Changing the limit means the user wants it included in requests.
-    if (key === "api.maxTokens")
-      Zotero.Prefs.set(`${PREFIX}.api.maxTokens.enabled`, true, true);
+    // The option rows are independent: editing the value never implicitly
+    // turns a request option on; its own checkbox does that.
+    if (key.endsWith(".enabled")) this.applyOptionToggle(key);
   }
 
   private sync(key: string) {
@@ -221,6 +224,7 @@ class PreferencesPane {
     for (const out of this.root.querySelectorAll(`[data-show="${key}"]`)) {
       out.textContent = text;
     }
+    if (key.endsWith(".enabled")) this.applyOptionToggle(key);
     this.refreshDerived();
   }
 
@@ -889,6 +893,43 @@ class PreferencesPane {
   }
 
   // ---- storage
+
+  /** An `<x>.enabled` checkbox owns the controls in its own row. */
+  private applyOptionToggle(key: string) {
+    const toggle = this.root.querySelector<HTMLInputElement>(
+      `input[type="checkbox"][data-pref="${key}"]`,
+    );
+    const row = toggle?.closest(".glossa-row") as HTMLElement | null;
+    if (!toggle || !row) return;
+    const on = toggle.checked;
+    row.classList.toggle("glossa-row-off", !on);
+    for (const control of row.querySelectorAll<Control>(
+      ".glossa-field input, .glossa-field select, .glossa-field textarea",
+    )) {
+      control.disabled = !on;
+    }
+  }
+
+  // ---- glossary
+
+  /** Term count plus the entry point to the local glossary manager. */
+  private initGlossary() {
+    const count = this.el("glossary-count");
+    const render = () => {
+      count.textContent = getString("pref-glossary-count", {
+        args: { count: glossary.list().length },
+      });
+    };
+    render();
+    this.cleanup.push(glossary.subscribe(render));
+    void glossary.ensureLoaded().then(render, (error) => {
+      ztoolkit.log("[Glossa] glossary load failed", error);
+      count.textContent = getString("glossary-load-error");
+    });
+    this.el("glossary-open").addEventListener("click", () => {
+      openGlossaryManager();
+    });
+  }
 
   private initStorage() {
     const dir = conversationsDir();

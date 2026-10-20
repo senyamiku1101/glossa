@@ -31,6 +31,19 @@ function trackDialog(dialog: { window: Window }) {
   });
 }
 
+/** A dialog that cannot open must say so; a silent click looks broken. */
+function reportOpenFailure() {
+  try {
+    Services.prompt.alert(
+      Zotero.getMainWindow() as any,
+      "Glossa",
+      getString("glossary-open-error"),
+    );
+  } catch (error) {
+    ztoolkit.log("[Glossa] glossary error alert failed", error);
+  }
+}
+
 /**
  * Personal glossary UI. Two surfaces share one editor: the reader popup's
  * "add term" button and the chat header's manage button. Both open real
@@ -53,8 +66,18 @@ export type GlossaryEditorOptions = {
 /**
  * Two-field editor dialog for one term. Stays open on error so nothing the
  * user typed is lost; closes only after a save that the store accepted.
+ * Opening failures are reported instead of disappearing silently.
  */
 export async function openGlossaryEditor(options: GlossaryEditorOptions = {}) {
+  try {
+    await openEditorDialog(options);
+  } catch (error) {
+    ztoolkit.log("[Glossa] glossary editor failed", error);
+    reportOpenFailure();
+  }
+}
+
+async function openEditorDialog(options: GlossaryEditorOptions = {}) {
   const existing = options.existing;
   let loadError = false;
   try {
@@ -168,6 +191,7 @@ export async function openGlossaryEditor(options: GlossaryEditorOptions = {}) {
       centerscreen: true,
       resizable: false,
       fitContent: true,
+      alwaysRaised: true,
     });
   trackDialog(dialog);
 
@@ -217,6 +241,15 @@ export async function openGlossaryEditor(options: GlossaryEditorOptions = {}) {
 
 /** Searchable manage dialog: list, edit and delete saved terms. */
 export function openGlossaryManager() {
+  try {
+    openManagerDialog();
+  } catch (error) {
+    ztoolkit.log("[Glossa] glossary manager failed", error);
+    reportOpenFailure();
+  }
+}
+
+function openManagerDialog() {
   let loaded = false;
   let loadFailed = false;
   const dialog = new ztoolkit.Dialog(3, 1)
@@ -280,6 +313,7 @@ export function openGlossaryManager() {
       centerscreen: true,
       resizable: true,
       fitContent: true,
+      alwaysRaised: true,
     });
   trackDialog(dialog);
 

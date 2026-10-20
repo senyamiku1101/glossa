@@ -197,3 +197,6 @@ glossa-board-collapse = Collapse board
 glossa-board-paper-missing = The source item is no longer available
 glossa-board-expand-text = Show more
 glossa-board-collapse-text = Show less
+glossa-glossary-open-error = Could not open the glossary window. Please retry.
+glossa-pref-glossary-count = { $count } saved terms
+glossa-pref-translation-same-profile = Both stages use the same profile; only two different models make this a two-model review.

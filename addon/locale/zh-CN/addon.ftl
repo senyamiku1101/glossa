@@ -197,3 +197,6 @@ glossa-board-collapse = 收起看板
 glossa-board-paper-missing = 原文献已不可用
 glossa-board-expand-text = 展开
 glossa-board-collapse-text = 收起
+glossa-glossary-open-error = 无法打开术语库窗口，请重试。
+glossa-pref-glossary-count = 已保存 { $count } 条
+glossa-pref-translation-same-profile = 两个阶段选择了同一配置档；只有选择不同模型才是双模型协同。
