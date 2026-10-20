@@ -748,7 +748,7 @@ function paragraphLinesAt(
         line.column === anchor.column &&
         line.x >= left - 5 &&
         line.x <= left + 22 &&
-        Math.abs(line.size - anchor.size) < anchor.size * 0.25 &&
+        Math.abs(line.size - anchor.size) < anchor.size * 0.2 &&
         line.text.length > 3,
     )
     .sort((a, b) => b.y - a.y);
@@ -984,9 +984,20 @@ function isCaptionLabel(text: string) {
   return /^(?:Fig\.?\s*\d+|Figure\s+\d+\s*[:.]|Table\s+\d+)/i.test(text);
 }
 
-function markCaptions(lines: Line[]) {
+/** A body-size line that continues with a lowercase word after "Fig. 12" is a
+ * reference sentence ("Fig. 12 shows the levels ..."), not a caption. */
+function isFigureReference(line: Line, bodyFont?: number) {
+  return Boolean(
+    bodyFont &&
+    line.size >= bodyFont * 0.92 &&
+    /^(?:[Ff]ig(?:ure)?\.?|[Tt]able)\s*\d+[a-z]?\s+[a-z]/.test(line.text),
+  );
+}
+
+function markCaptions(lines: Line[], bodyFont?: number) {
   for (const label of lines) {
     if (!isCaptionLabel(label.text)) continue;
+    if (isFigureReference(label, bodyFont)) continue;
     for (const line of captionBlock(lines, label)) line.caption = true;
   }
 }
@@ -1193,7 +1204,17 @@ function layoutLines(items: TextItem[], pageWidth: number): Line[] {
     })
     .filter((line) => !isPageFurniture(line.text));
   const joined = joinDetachedListMarkers(lines);
-  markCaptions(joined);
+  // Body size is needed before captions: a body-size sentence that starts with
+  // "Fig. 12 shows ..." references a figure and is not its caption.
+  const bodyFont = frequentValue(
+    joined
+      .filter(
+        (line) =>
+          !line.heading && line.text.length > 25 && !isCaptionLabel(line.text),
+      )
+      .map((line) => line.size),
+  );
+  markCaptions(joined, bodyFont);
   const font = frequentValue(
     joined
       .filter((line) => !line.heading && !line.caption && line.text.length > 25)
@@ -1980,6 +2001,197 @@ function pageInfo(layout: PageLayout): PageInfo {
   return { size, lefts, rights, captions };
 }
 
+type ChainFragment = {
+  page: number;
+  column: number;
+  lines: Line[];
+  left: number;
+  spacing: number;
+};
+
+/**
+ * Body lanes in reading order: page by page, left column before right. A
+ * figure at the top of a column pushes that column's text down, so fragments
+ * cannot be ordered by their top coordinate; they are chained by text
+ * continuity instead (see `chainedParagraphAt`).
+ */
+function chainBodyProse(line: Line, bodySize: number) {
+  return (
+    line.text.length > 15 &&
+    proseLike(line.text) &&
+    Math.abs(line.size - bodySize) < bodySize * 0.2
+  );
+}
+
+function chainFragments(pages: Map<number, PageLayout>): ChainFragment[] {
+  const fragments: ChainFragment[] = [];
+  for (const page of [...pages.keys()].sort((a, b) => a - b)) {
+    const layout = pages.get(page)!;
+    const info = pageInfo(layout);
+    for (const column of [...info.lefts.keys()].sort((a, b) => a - b)) {
+      const left = info.lefts.get(column)!;
+      const lines = layout.lines
+        .filter(
+          (line) =>
+            !line.heading &&
+            !line.caption &&
+            !info.captions.has(line) &&
+            line.column === column &&
+            Math.abs(line.size - info.size) < info.size * 0.4 &&
+            line.text.length > 3 &&
+            line.x >= left - 5 &&
+            line.x <= left + 22,
+        )
+        .sort((a, b) => b.y - a.y);
+      // A figure's axis numbers and legend fragments can sit in the same
+      // horizontal band as the column. They are drawing labels, not body
+      // text; skip them before the first real prose line of the column.
+      while (lines.length && !chainBodyProse(lines[0], info.size))
+        lines.shift();
+      if (lines.length < 2) continue;
+      markBodyBoundaries(lines, layout.lines);
+      const gaps = lines
+        .slice(1)
+        .map((line, index) => lines[index].y - line.y)
+        .filter((gap) => gap > info.size * 0.75 && gap < info.size * 1.7)
+        .sort((a, b) => a - b);
+      fragments.push({
+        page,
+        column,
+        lines,
+        left,
+        spacing: gaps[Math.floor(gaps.length / 2)] || info.size * 1.1,
+      });
+    }
+  }
+  return fragments;
+}
+
+/**
+ * One paragraph that runs through any number of column or page fragments.
+ * Only used when the fixed one- and two-fragment rules cannot confirm both
+ * boundaries. The start/end must still be proven by a paragraph boundary or
+ * by a readable continuation; nothing is guessed or silently truncated.
+ */
+function chainedParagraphAt(
+  fragments: ChainFragment[],
+  pages: Map<number, PageLayout>,
+  missing: Set<number>,
+  anchor: Line,
+): AtResult {
+  const index = fragments.findIndex((fragment) =>
+    fragment.lines.includes(anchor),
+  );
+  if (index < 0) return { kind: "unmatched", detail: "chain-anchor-missing" };
+  const size = anchor.size;
+  let startFragment = index;
+  let start = fragments[index].lines.indexOf(anchor);
+  for (;;) {
+    const fragment = fragments[startFragment];
+    while (
+      start > 0 &&
+      !startsParagraphAt(
+        fragment.lines,
+        start,
+        fragment.left,
+        fragment.spacing,
+        size,
+      )
+    )
+      start--;
+    if (
+      start > 0 ||
+      startsParagraphAt(
+        fragment.lines,
+        0,
+        fragment.left,
+        fragment.spacing,
+        size,
+      )
+    )
+      break;
+    const previous = fragments[startFragment - 1];
+    if (!previous) {
+      const page = fragment.page - 1;
+      if (page >= 0 && !pages.has(page) && !missing.has(page))
+        return { kind: "need", page };
+      return { kind: "unmatched", detail: "chain-start-unconfirmed" };
+    }
+    if (
+      !previous.lines.length ||
+      !canContinue(previous.lines[previous.lines.length - 1], fragment.lines[0])
+    )
+      return { kind: "unmatched", detail: "chain-start-unconfirmed" };
+    startFragment--;
+    start = previous.lines.length - 1;
+  }
+  // End evidence for a fragment boundary uses the same justified-edge rules
+  // as a single-page paragraph; a bare period is not enough.
+  const singleColumnPage = (page: number) =>
+    !fragments.some((other) => other.page === page && other.column === 1);
+  const endConfirmed = (slot: number, endIndex: number) => {
+    const fragment = fragments[slot];
+    const from = slot === startFragment ? start : 0;
+    const selected = fragment.lines.slice(from, endIndex + 1);
+    return confirmedFinalLine(
+      selected,
+      fragment.lines,
+      size,
+      fragment.column === 0 && singleColumnPage(fragment.page),
+    );
+  };
+  let endFragment = index;
+  let end = fragments[index].lines.indexOf(anchor);
+  for (;;) {
+    const fragment = fragments[endFragment];
+    let next = end + 1;
+    while (
+      next < fragment.lines.length &&
+      !startsParagraphAt(
+        fragment.lines,
+        next,
+        fragment.left,
+        fragment.spacing,
+        size,
+      )
+    )
+      next++;
+    if (next < fragment.lines.length) {
+      end = next - 1;
+      break;
+    }
+    end = fragment.lines.length - 1;
+    const following = fragments[endFragment + 1];
+    const last = fragment.lines[end];
+    if (!following) {
+      const page = fragment.page + 1;
+      if (page >= 0 && !pages.has(page) && !missing.has(page))
+        return { kind: "need", page };
+      if (!endConfirmed(endFragment, end))
+        return { kind: "unmatched", detail: "chain-end-unconfirmed" };
+      break;
+    }
+    if (canContinue(last, following.lines[0])) {
+      endFragment++;
+      end = 0;
+      continue;
+    }
+    if (!endConfirmed(endFragment, end))
+      return { kind: "unmatched", detail: "chain-end-unconfirmed" };
+    break;
+  }
+  const lines: Line[] = [];
+  for (let slot = startFragment; slot <= endFragment; slot++) {
+    const fragment = fragments[slot];
+    const from = slot === startFragment ? start : 0;
+    const to = slot === endFragment ? end + 1 : fragment.lines.length;
+    lines.push(...fragment.lines.slice(from, to));
+  }
+  if (lines.length < 2 || lines.length > 400)
+    return { kind: "unmatched", detail: "chain-line-count" };
+  return { kind: "lines", lines };
+}
+
 function multiParagraph(input: MultiInput): MultiOutcome {
   const { pages, missing, start } = input;
   const fail = (
@@ -2110,6 +2322,7 @@ function multiParagraph(input: MultiInput): MultiOutcome {
       ),
     );
   const rank = new Map(sequence.map((line, index) => [line, index]));
+  const fragments = chainFragments(pages);
   const memo = new Map<Line, AtResult>();
   const paragraphAt = (line: Line): AtResult => {
     const cached = memo.get(line);
@@ -2176,6 +2389,14 @@ function multiParagraph(input: MultiInput): MultiOutcome {
             return { kind: "lines", lines: partial };
         } else if (canLoad(page + 1)) return { kind: "need", page: page + 1 };
       }
+    }
+    // The fixed two-fragment rules stop at a column or page boundary. A
+    // figure at the top of a column can force one paragraph through several
+    // fragments, so walk the visible body lanes when neither boundary could
+    // be confirmed above. The chain still requires a proven start and end.
+    if (line.column >= 0) {
+      const chained = chainedParagraphAt(fragments, pages, missing, line);
+      if (chained.kind !== "unmatched") return chained;
     }
     return { kind: "unmatched", detail };
   };

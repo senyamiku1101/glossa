@@ -1227,6 +1227,107 @@ await check(
     );
   },
 );
+await check(
+  "body-size 'Fig. 12 shows ...' sentence is prose, not a caption block",
+  () => {
+    const page = pageWith([
+      [59, 700, "The previous measurements on the model intake were complete."],
+      [59, 690, "Fig. 12 shows the levels of the blade passing frequency tone"],
+      [59, 680, "from in-duct measurements of the model and the engine on the"],
+      [
+        59,
+        670,
+        "aircraft plotted against the tip relative Mach number in flight.",
+      ],
+      [
+        59,
+        653,
+        "Differences in the shape of the intake can have large effects on",
+      ],
+      [
+        59,
+        643,
+        "the intake wall boundary layer. Whereas the flared intake gives",
+      ],
+      [
+        59,
+        633,
+        "a continuous acceleration up to the fan inlet plane, the flight",
+      ],
+      [59, 623, "intake produces considerable diffusion in the radial plane."],
+      [69, 613, "A later paragraph begins after this discussion has finished."],
+    ]);
+    const result = paragraphFromPageData(
+      page,
+      "Differences in the shape of the intake",
+    );
+    assert.equal(result.kind, "ready");
+    assert.equal(
+      result.text,
+      [
+        "Differences in the shape of the intake can have large effects on",
+        "the intake wall boundary layer. Whereas the flared intake gives",
+        "a continuous acceleration up to the fan inlet plane, the flight",
+        "intake produces considerable diffusion in the radial plane.",
+      ].join(" "),
+    );
+  },
+);
+
+// A paragraph can cross a column, a page and a figure-pushed column. The
+// start belongs to the first page's left column and the end to the second
+// page's left column; the fixed two-fragment rules cannot confirm this.
+const fragmentPageA = pageWith([
+  [59, 700, "An earlier paragraph ends on this side with a final full stop."],
+  [69, 690, "The intake shape changes the wall boundary layer and the flow"],
+  [59, 680, "near the fan face, producing a strong diffusion that must be"],
+  [59, 670, "carried into the right column without any paragraph break at"],
+  [
+    312,
+    500,
+    "all, and tends to thicken the boundary layer near the wall while",
+  ],
+  [
+    312,
+    490,
+    "the mean velocity drops before the fan leading edge and the flow",
+  ],
+  [312, 480, "keeps diffusing through the model intake passage of the rig and"],
+]);
+const fragmentPageB = pageWith([
+  [59, 620, "there is a very strong dependence of tone level on the intake"],
+  [59, 610, "boundary layer at this relatively high tip Mach number."],
+  [69, 598, "The corresponding plot of tone level against momentum thickness"],
+  [59, 588, "does not show any comparable correlation in the present results."],
+]);
+await check(
+  "paragraph chained across left column, right column and next page",
+  async () => {
+    const result = await getPdfLayoutParagraph(
+      {
+        _internalReader: {
+          _primaryView: { _pdfPages: { 4: fragmentPageA, 5: fragmentPageB } },
+        },
+      },
+      "and tends to thicken the boundary layer near the wall",
+      4,
+    );
+    assert.equal(result?.kind, "ready");
+    assert.equal(
+      result.text,
+      [
+        "The intake shape changes the wall boundary layer and the flow",
+        "near the fan face, producing a strong diffusion that must be",
+        "carried into the right column without any paragraph break at",
+        "all, and tends to thicken the boundary layer near the wall while",
+        "the mean velocity drops before the fan leading edge and the flow",
+        "keeps diffusing through the model intake passage of the rig and",
+        "there is a very strong dependence of tone level on the intake",
+        "boundary layer at this relatively high tip Mach number.",
+      ].join(" "),
+    );
+  },
+);
 if (failures.length)
   throw new Error(
     `${failures.length}/${probes} edge cases failed:\n` + failures.join("\n"),
