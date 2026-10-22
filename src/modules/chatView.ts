@@ -948,7 +948,7 @@ export class ChatView {
     // busy/storage gates must be applied here too, not only in renderBusy.
     const key = this.key;
     const bucket = key ? conversations.get(key) : undefined;
-    const reviewDisabled =
+    const actionDisabled =
       runner.busy || !bucket || !bucket.loaded || !!bucket.storageError;
     // Only a committed translation with text can be collected; an incomplete
     // one has no final text. The key follows the final body, so a reviewed
@@ -1051,6 +1051,25 @@ export class ChatView {
                 },
               ]
             : []),
+          {
+            tag: "button",
+            namespace: "html" as const,
+            classList: ["glossa-translation-delete"],
+            attributes: {
+              type: "button",
+              title: getString("translation-delete"),
+            },
+            properties: {
+              textContent: getString("translation-delete"),
+              disabled: actionDisabled,
+            },
+            listeners: [
+              {
+                type: "click",
+                listener: () => this.deleteTranslation(sessionId, turnIndex),
+              },
+            ],
+          },
           ...(reviewable
             ? [
                 {
@@ -1061,7 +1080,7 @@ export class ChatView {
                   properties: {
                     textContent: getString("translation-review-action"),
                     title: getString("translation-review-action"),
-                    disabled: reviewDisabled,
+                    disabled: actionDisabled,
                   },
                   listeners: [
                     {
@@ -1147,6 +1166,32 @@ export class ChatView {
       });
     } catch (error) {
       ztoolkit.log("[Glossa] review translation failed", error);
+    }
+  }
+
+  /**
+   * Delete one committed translation and the question that produced it. The
+   * board keeps its own copy; this only edits the transcript.
+   */
+  private deleteTranslation(sessionId: string, turnIndex: number) {
+    const key = this.key;
+    if (!key) return;
+    const bucket = conversations.get(key);
+    if (!bucket.loaded || bucket.storageError || runner.busy) return;
+    if (
+      !Services.prompt.confirm(
+        this.win as any,
+        "Glossa",
+        getString("translation-delete-confirm"),
+      )
+    )
+      return;
+    if (!conversations.deleteTranslation(key, sessionId, turnIndex)) {
+      Services.prompt.alert(
+        this.win as any,
+        "Glossa",
+        getString("translation-delete-failed"),
+      );
     }
   }
 
@@ -1315,7 +1360,9 @@ export class ChatView {
           busy || !bucket || !bucket.loaded || !!bucket.storageError;
       });
     this.root
-      .querySelectorAll<HTMLButtonElement>(".glossa-translation-review")
+      .querySelectorAll<HTMLButtonElement>(
+        ".glossa-translation-review, .glossa-translation-delete",
+      )
       .forEach((button: HTMLButtonElement) => {
         button.disabled =
           busy || !bucket || !bucket.loaded || !!bucket.storageError;

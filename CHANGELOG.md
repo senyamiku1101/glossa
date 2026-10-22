@@ -4,6 +4,18 @@ All notable changes to Glossa are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.19] - Unreleased
+
+This version is still in development; the list below covers what is in the
+working tree so far.
+
+### Added
+
+- Delete a translation result from the conversation. Every committed
+  translation card now has a **Delete** action; after confirmation it removes
+  the translation together with the question that produced it. A copy already
+  added to the translation board is kept.
+
 ## [0.2.18] - 2026-10-22
 
 First public GitHub release. This is the first build whose embedded update feed

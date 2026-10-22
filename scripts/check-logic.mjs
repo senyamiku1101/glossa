@@ -42,6 +42,7 @@ const {
   buildHistory,
   conversationFileName,
   parseConversation,
+  removeExchange,
   serializeConversation,
 } = await load("src/utils/history.ts");
 const { parseInline, parseMarkdown, texToParts } = await load(
@@ -647,6 +648,35 @@ assert(
     parseConversation(
       '{"turns":[{"role":"system","content":"x"},{"role":"user"}]}',
     ).length === 0,
+);
+const exchanges = [
+  { role: "user", content: "q1" },
+  { role: "assistant", content: "a1" },
+  { role: "user", content: "q2" },
+  { role: "assistant", content: "a2" },
+];
+assert(
+  "removeExchange drops an assistant turn with its question",
+  (() => {
+    const left = removeExchange(exchanges, 1);
+    return (
+      left.length === 2 &&
+      left[0].content === "q2" &&
+      left[1].content === "a2" &&
+      exchanges.length === 4
+    );
+  })(),
+);
+assert(
+  "removeExchange keeps a reply that has no preceding question",
+  removeExchange([{ role: "assistant", content: "a" }], 0).length === 0,
+);
+assert(
+  "removeExchange rejects non-assistant or out-of-range indexes",
+  removeExchange(exchanges, 0) === undefined &&
+    removeExchange(exchanges, -1) === undefined &&
+    removeExchange(exchanges, 9) === undefined &&
+    removeExchange(exchanges, 1.5) === undefined,
 );
 
 // ---- markdown.ts

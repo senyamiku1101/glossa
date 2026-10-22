@@ -195,6 +195,83 @@ assert.equal(failing.active("1/FAIL").turns.length, 2);
 assert.equal(failing.deleteSession("1/FAIL", failedId), false);
 failWrites = false;
 
+// Deleting a translation result removes its question too and persists at once.
+const deleteStore = new ConversationStore();
+await deleteStore.ensureLoaded("1/DELETE");
+const deleteSessionId = deleteStore.active("1/DELETE").id;
+const translate = (source, text) => [
+  { role: "user", content: source },
+  {
+    role: "assistant",
+    content: text,
+    translation: { mode: "quick", source, status: "draft" },
+  },
+];
+deleteStore.commitPending(
+  "1/DELETE",
+  deleteSessionId,
+  ...translate("First source", "First translation"),
+);
+deleteStore.commitPending(
+  "1/DELETE",
+  deleteSessionId,
+  ...translate("Second source", "Second translation"),
+);
+assert.equal(
+  deleteStore.deleteTranslation("1/DELETE", deleteSessionId, 0),
+  false,
+  "a user turn is not a translation",
+);
+assert.equal(
+  deleteStore.deleteTranslation("1/DELETE", deleteSessionId, 9),
+  false,
+  "out-of-range turn index is refused",
+);
+deleteStore.setBusy("1/DELETE", deleteSessionId);
+assert.equal(
+  deleteStore.deleteTranslation("1/DELETE", deleteSessionId, 1),
+  false,
+  "running session cannot drop a turn",
+);
+deleteStore.setBusy(undefined);
+assert.equal(
+  deleteStore.deleteTranslation("1/DELETE", deleteSessionId, 1),
+  true,
+);
+assert.equal(deleteStore.active("1/DELETE").turns.length, 2);
+assert.equal(deleteStore.active("1/DELETE").turns[0].content, "Second source");
+assert.equal(
+  deleteStore.active("1/DELETE").title,
+  "Second source",
+  "automatic title follows the first remaining question",
+);
+assert.equal(
+  deleteStore.deleteTranslation("1/DELETE", deleteSessionId, 1),
+  true,
+);
+assert.equal(deleteStore.active("1/DELETE").turns.length, 0);
+assert.equal(deleteStore.active("1/DELETE").title, "");
+await flush(deleteStore);
+const deletedSession = JSON.parse(disk.get("/sessions/u_DELETE.json"));
+assert.equal(deletedSession.sessions[0].turns.length, 0);
+
+// Answers that are not translations are outside this action's scope.
+const plainStore = new ConversationStore();
+await plainStore.ensureLoaded("1/PLAIN");
+const plainId = plainStore.active("1/PLAIN").id;
+plainStore.commitPending(
+  "1/PLAIN",
+  plainId,
+  { role: "user", content: "Question" },
+  { role: "assistant", content: "Answer" },
+);
+assert.equal(
+  plainStore.deleteTranslation("1/PLAIN", plainId, 1),
+  false,
+  "non-translation answers are not deletable from the card",
+);
+await flush(plainStore);
+
 // Exercise the real async runner: switching sessions during context building
 // must neither mix the request history nor send the reply into the new session.
 const runStore = new ConversationStore();

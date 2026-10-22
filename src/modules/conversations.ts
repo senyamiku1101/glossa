@@ -3,6 +3,7 @@ import { conversationsDir, io, paths } from "../utils/paths";
 import {
   conversationFileName,
   parseSessionFile,
+  removeExchange,
   serializeSessionFile,
   sessionTitle,
   type SessionRecord,
@@ -218,6 +219,39 @@ export class ConversationStore {
     }
     this.save(convo);
     this.emit(key, "session");
+    return true;
+  }
+
+  /**
+   * Delete one committed translation, together with the user turn that
+   * produced it. The board keeps its own copy; this only edits the transcript.
+   * Running or read-only sessions are refused, like the other destructive
+   * actions.
+   */
+  deleteTranslation(key: string, sessionId: string, turnIndex: number) {
+    const convo = this.get(key);
+    if (
+      !convo.loaded ||
+      convo.storageError ||
+      (this.busyKey === key && this.busySessionId === sessionId)
+    )
+      return false;
+    const session = this.session(key, sessionId);
+    const turn = session?.turns[turnIndex];
+    if (!session || !turn || turn.role !== "assistant" || !turn.translation)
+      return false;
+    const previousTitle = sessionTitle(session.turns);
+    const turns = removeExchange(session.turns, turnIndex);
+    if (!turns) return false;
+    session.turns = turns;
+    session.updatedAt = new Date().toISOString();
+    // Keep a renamed title; refresh an automatic one after its first question
+    // was removed, and reset a session that has no turns left.
+    if (!turns.length) session.title = "";
+    else if (session.title === previousTitle)
+      session.title = sessionTitle(turns);
+    this.save(convo);
+    this.emit(key, "changed");
     return true;
   }
 

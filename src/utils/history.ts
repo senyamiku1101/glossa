@@ -159,6 +159,25 @@ export function buildHistory(
 }
 
 /**
+ * Remove one assistant turn together with the user turn that produced it.
+ * Returns a new array, or undefined when the index is not an assistant turn.
+ * Used by the store to delete a translation result and its question.
+ */
+export function removeExchange(
+  turns: Turn[],
+  turnIndex: number,
+): Turn[] | undefined {
+  if (!Number.isInteger(turnIndex)) return undefined;
+  const turn = turns[turnIndex];
+  if (!turn || turn.role !== "assistant") return undefined;
+  const start =
+    turnIndex > 0 && turns[turnIndex - 1].role === "user"
+      ? turnIndex - 1
+      : turnIndex;
+  return [...turns.slice(0, start), ...turns.slice(turnIndex + 1)];
+}
+
+/**
  * File name for an item's conversation. Library IDs are local to one
  * installation and change when a group is re-added, so name files by
  * library type and group ID instead.

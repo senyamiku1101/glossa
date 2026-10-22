@@ -1097,6 +1097,25 @@ item-details.glossa-workspace-active item-pane-header {
   opacity: 0.45;
   cursor: default;
 }
+/* Card-level delete action: a quiet text button next to the review action. */
+.glossa-translation-delete {
+  flex: none;
+  padding: 3px 8px;
+  color: var(--glossa-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.glossa-translation-delete:hover:not(:disabled) {
+  color: var(--glossa-error);
+  border-color: var(--glossa-error);
+}
+.glossa-translation-delete:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 .glossa-translation-warning {
   flex-basis: 100%;
   color: var(--glossa-muted);
