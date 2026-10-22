@@ -1,7 +1,7 @@
 {
   "name": "glossa",
   "type": "module",
-  "version": "0.2.17",
+  "version": "0.2.18",
   "description": "Fully open-source AI assistant for Zotero. No paid modules, no encrypted payloads.",
   "config": {
     "addonName": "Glossa",
@@ -12,14 +12,27 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/openzotero/glossa.git"
+    "url": "git+https://github.com/senyamiku1101/glossa.git"
   },
   "author": "Glossa contributors",
   "bugs": {
-    "url": "https://github.com/openzotero/glossa/issues"
+    "url": "https://github.com/senyamiku1101/glossa/issues"
   },
-  "homepage": "https://github.com/openzotero/glossa#readme",
+  "homepage": "https://github.com/senyamiku1101/glossa#readme",
   "license": "AGPL-3.0-or-later",
+  "engines": {
+    "node": ">=22.8.0"
+  },
+  "keywords": [
+    "zotero",
+    "zotero-plugin",
+    "ai",
+    "llm",
+    "translation",
+    "pdf",
+    "research",
+    "open-source"
+  ],
   "scripts": {
     "start": "zotero-plugin serve",
     "build": "tsc --noEmit && node scripts/pack-source.mjs && zotero-plugin build",

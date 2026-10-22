@@ -25,6 +25,7 @@ for (const name of [
   "eslint.config.mjs",
   ".env.example",
   "README.md",
+  "CHANGELOG.md",
   "PRINCIPLES.md",
   "COPYRIGHT",
   "LICENSE",

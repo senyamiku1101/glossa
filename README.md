@@ -4,8 +4,13 @@ Fully open-source AI assistant for [Zotero](https://www.zotero.org/) 7–10.
 
 There is **no Pro edition**, no encrypted module, and no license server. If a feature exists, its TypeScript is in this repository.
 
-[![Using Zotero Plugin Template](https://img.shields.io/badge/Using-Zotero%20Plugin%20Template-blue?style=flat-square&logo=github)](https://github.com/windingwind/zotero-plugin-template)
+[![Release](https://img.shields.io/github/v/release/senyamiku1101/glossa?style=flat-square&label=release)](https://github.com/senyamiku1101/glossa/releases/latest)
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
+[![Zotero 7–10](https://img.shields.io/badge/Zotero-7%E2%80%9310-blue?style=flat-square)](https://www.zotero.org/)
+[![Using Zotero Plugin Template](https://img.shields.io/badge/Using-Zotero%20Plugin%20Template-blue?style=flat-square&logo=github)](https://github.com/windingwind/zotero-plugin-template)
+
+- English: [Install](#install) · [Updates](#updates) · [Privacy](#privacy-and-data) · [Compatibility](#compatibility) · [Changelog](CHANGELOG.md) · [Development](#install-for-development)
+- 中文：[安装与更新](#安装与更新) · [隐私与数据](#隐私与数据) · [更新日志](CHANGELOG.md)
 
 中文说明见下文。
 
@@ -14,6 +19,31 @@ There is **no Pro edition**, no encrypted module, and no license server. If a fe
 Glossa is designed for inspectable research assistance: **each XPI contains the source and build recipe used to make it**.
 
 The product centers on evidence checks, method maps, and a local record of the document context sent with each answer. Any reused code or asset must be identified and attributed before a public release.
+
+## Install
+
+1. Download the latest `glossa.xpi` from the [Releases page](https://github.com/senyamiku1101/glossa/releases/latest).
+2. In Zotero 7–10 open **Tools → Plugins**, click the gear button, choose **Install Plugin From File…**, and select the downloaded XPI.
+3. Open **Edit → Settings → Glossa**, choose a provider preset (or type any compatible base URL), enter the API key and model, then press **Test**.
+
+Glossa has no account or service of its own: API keys are stored in Zotero's login manager, and requests go directly from your machine to the provider you configure.
+
+## Updates
+
+Every XPI embeds an update feed (`applications.zotero.update_url` → `update.json` in the rolling `release` tag of this repository). When a new version is published as a GitHub Release, Zotero discovers it during its regular add-on update check, or immediately via **Tools → Plugins → gear → Check for Updates**. No account, server, or subscription is involved.
+
+Builds before 0.2.18 pointed at a placeholder repository address, so they cannot update themselves. Install 0.2.18 or later **once by hand**; automatic updates work from that version on.
+
+## Privacy and data
+
+- API keys: Zotero's login manager (`logins.json`, encrypted with the profile's `key4.db`), never in `prefs.js`.
+- Conversations, glossary and translation board: plain local JSON under `<Zotero data directory>/glossa/`; they are not Zotero notes and do not sync.
+- Prompts and document context leave your machine only to the model provider you configured.
+- No telemetry, no license server, no encrypted payloads.
+
+## Compatibility
+
+Zotero 7, 8, 9 and 10 (`strict_min_version` 7.0, `strict_max_version` 10.*). Any host that speaks OpenAI Chat Completions, OpenAI Responses or Anthropic Messages works, including compatible relays.
 
 ## Features (v0.2)
 
@@ -37,7 +67,7 @@ The product centers on evidence checks, method maps, and a local record of the d
 
 Existing single-conversation files migrate automatically. An untouched `.v1.bak` backup is kept alongside each migrated file before it is updated. New conversation starts a separate session without deleting history. Source navigation and annotation helpers are planned.
 
-## Install (development)
+## Install for development
 
 1. Install [Node.js LTS](https://nodejs.org/) and Zotero 7+.
 2. `cd glossa && npm install`
@@ -68,6 +98,8 @@ Question:
 
 **Glossa** is a scholarly gloss: notes in the margin of a text.
 
+Glossa is an independent community project, not affiliated with or endorsed by the Zotero project.
+
 ## License
 
 [AGPL-3.0-or-later](LICENSE). Charging for support is fine. Shipping a closed module next to this code is not.
@@ -93,5 +125,20 @@ See [PRINCIPLES.md](PRINCIPLES.md).
 - 划词弹窗将「选区 / 选段」「翻译 / 协同翻译 / 详细解释」和发送箭头放在同一排。「选段」扩展到选区覆盖的各个完整自然段，保留原顺序和段落间隔；设置中可选择默认范围。选择默认选段只会自动识别，点击箭头才发送，结果保存到当前文献的 Glossa 会话。识别中或识别失败时发送箭头为灰色并禁用，只有获得可用文字后才变绿；发送过程中也保持灰色禁用。无法确认完整边界（如复杂公式断开正文）时不发送，仍保留「选段」并显示诊断，可重新划选文字或切换范围重新识别，或手动切换为「选区」。
 - 点击右侧 Glossa 图标进入固定高度的阅读面板，输入区固定在底部，仅正文滚动。划词会更新引用，但不会抢焦点。
 - 旧版记录自动迁移，原文件保留为同目录下的 `.v1.bak` 备份。
+
+### 安装与更新
+
+1. 从 [Releases](https://github.com/senyamiku1101/glossa/releases/latest) 下载最新 `glossa.xpi`。
+2. Zotero 7–10 中打开 **工具 → 插件**，点齿轮按钮选择 **从文件安装插件…**，选中该 XPI。
+3. 打开 **编辑 → 设置 → Glossa**，选择服务预设（或填写兼容的 Base URL），填入密钥与模型，点「测试」即可。
+
+插件内置 GitHub Releases 更新源：发布新版本后，Zotero 会在常规插件更新检查（或 **工具 → 插件 → 齿轮 → 检查更新**）中发现并升级，不需要账号、服务器或订阅。0.2.18 之前的构建使用占位仓库地址，无法自动更新，需手动安装一次 0.2.18 或更高版本。
+
+### 隐私与数据
+
+- 密钥存放在 Zotero 登录管理器，不写入 `prefs.js`。
+- 会话、术语库与翻译看板都是本地 JSON（`<Zotero 数据目录>/glossa/`），不是 Zotero 笔记，也不同步。
+- 提示词与文献内容只会发送给你自己配置的模型服务商。
+- 没有遥测、没有授权服务器、没有加密模块。
 
 快捷键 `Ctrl+/`（在 PDF 阅读器里也能用）。设置在「编辑 → 设置 → Glossa」，命令标签也在设置页里编辑。
