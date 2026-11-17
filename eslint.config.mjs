@@ -1,4 +1,7 @@
 // @ts-check
 import zotero from "@zotero-plugin/eslint-config";
 
-export default zotero();
+export default [
+  { ignores: ["tmp/**", "releases/**", ".scaffold/**"] },
+  ...zotero(),
+];

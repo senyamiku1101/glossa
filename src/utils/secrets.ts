@@ -9,7 +9,12 @@ const ORIGIN = `chrome://${config.addonRef}`;
 const REALM = config.addonName;
 
 /** Keys of the active settings; they existed as prefs in v0.1. */
-export const SECRET_NAMES = ["api.key", "embed.key"] as const;
+export const SECRET_NAMES = [
+  "api.key",
+  "embed.key",
+  "markdown.cloud.token",
+  "markdown.mineru.token",
+] as const;
 /** Saved profiles keep their own copies as `profile:<id>:api|embed`. */
 export type SecretName =
   (typeof SECRET_NAMES)[number] | `profile:${string}:${"api" | "embed"}`;

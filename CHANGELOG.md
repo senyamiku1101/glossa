@@ -4,17 +4,50 @@ All notable changes to Glossa are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [0.2.19] - Unreleased
-
-This version is still in development; the list below covers what is in the
-working tree so far.
+## [0.2.19] - 2026-11-17
 
 ### Added
 
-- Delete a translation result from the conversation. Every committed
-  translation card now has a **Delete** action; after confirmation it removes
-  the translation together with the question that produced it. A copy already
-  added to the translation board is kept.
+- Delete a translation and its corresponding question from a conversation after
+  confirmation. Copies already added to the translation board are kept.
+- Cloud PDF-to-Markdown preparation with **PaddleOCR** and **MinerU**, including
+  provider selection and connection testing. API keys are stored in Zotero's
+  login manager as `markdown.cloud.token` and `markdown.mineru.token`, never in
+  preferences, logs or generated Markdown.
+- Real Zotero Markdown attachments titled **[Glossa] Body · <PDF filename>**.
+  PDFs with a parent item get a Markdown child attachment; standalone PDFs get
+  a related attachment in the same library and collections. The readable main
+  Markdown file and its images are stored flat in the Markdown attachment's own
+  storage directory, with relative image links, so Zotero's native attachment
+  sync carries the complete body across devices, including through WebDAV.
+- Chat and retrieval prefer the prepared Markdown body, matched to its source
+  PDF, and fall back to PDF text when needed.
+- A compact **Background tasks** icon and popover in the Glossa chat header:
+  live progress, cancel, retry, open the Markdown attachment and clear finished
+  tasks. Item and collection menus now contain only **Convert body to Markdown**
+  and **Delete body Markdown**; converting again refreshes the body.
+- A two-card **Paper body** settings panel: parser service configuration, plus
+  automation and reading. Once configured, manual conversion and automatic
+  conversion follow these settings without a separate upload-permission dialog.
+
+### Fixed
+
+- Automatically remove early experimental bundle-sync data and only the known
+  legacy `glossa-body.md`, `glossa-meta.json` and strictly named
+  `glossa-asset-…` files from locally stored PDF directories, leaving PDFs and
+  other user files untouched.
+- MinerU presigned uploads no longer receive an unwanted form Content-Type;
+  safe CDN downloads and images whose actual format differs from the filename
+  extension are supported.
+- PaddleOCR disables heavyweight chart/orientation/unwarping pipelines while
+  retaining Markdown images. Repeated image references, readable image names,
+  HTML image sources and titled relative links retain their resources.
+
+### Validation
+
+- PaddleOCR, MinerU and cross-device WebDAV synchronization have been tested
+  successfully with real documents by the user. TypeScript, regression checks,
+  bilingual locale validation, formatting, lint and production build pass.
 
 ## [0.2.18] - 2026-10-22
 

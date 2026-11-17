@@ -1,5 +1,6 @@
 import { config } from "../../package.json";
 import { getString } from "../utils/locale";
+import { createBackgroundTasksWidget } from "./markdownUI";
 import { getPref, setPref } from "../utils/prefs";
 import { boardDedupeKey } from "../utils/board";
 import { templateKeys } from "../utils/text";
@@ -78,6 +79,7 @@ type PendingElements = {
 export class ChatView {
   readonly root: HTMLDivElement;
   private target?: Target;
+  private backgroundTasks?: ReturnType<typeof createBackgroundTasksWidget>;
   private unsubscribe: () => void;
   private readonly boardPanel?: BoardPanel;
   private unsubscribeBoard: () => void;
@@ -102,6 +104,10 @@ export class ChatView {
     private readonly options: ChatViewOptions = {},
   ) {
     this.root = this.build(container);
+    this.backgroundTasks = createBackgroundTasksWidget(this.win);
+    this.root
+      .querySelector(".glossa-header")
+      ?.append(this.backgroundTasks.root);
     // The board strip belongs to the item-pane workspace; the floating chat
     // still shows "add to board" on cards but does not mount a second panel.
     if (this.options.board) {
@@ -132,6 +138,7 @@ export class ChatView {
     this.unsubscribe();
     this.unsubscribeBoard();
     this.boardPanel?.dispose();
+    this.backgroundTasks?.dispose();
     views.delete(this);
     if (this.frame) this.win.cancelAnimationFrame(this.frame);
     this.frame = 0;

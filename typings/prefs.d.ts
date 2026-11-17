@@ -36,6 +36,20 @@ declare namespace _ZoteroTypes {
       "translation.draftProfile": string;
       "translation.reviewProfile": string;
       "board.expanded": boolean;
+      "markdown.enabled": boolean;
+      "markdown.provider": string;
+      "markdown.autoOnImport": boolean;
+      "markdown.autoOnChange": boolean;
+      "markdown.concurrency": number;
+      "markdown.readContext": boolean;
+      "markdown.bundleCleanupDone": boolean;
+      "markdown.cloud.endpoint": string;
+      "markdown.cloud.model": string;
+      "markdown.mineru.endpoint": string;
+      "markdown.mineru.modelVersion": string;
+      "markdown.mineru.language": string;
+      "markdown.mineru.isOcr": boolean;
+      "markdown.mineru.selfHosted": boolean;
     };
   }
 }

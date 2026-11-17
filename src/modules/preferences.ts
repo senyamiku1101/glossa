@@ -22,6 +22,12 @@ import {
   stripEndpointUrl,
 } from "../utils/protocol";
 import { listModels, testConnection, type TestKind } from "./llm";
+import {
+  testCurrentProviderConnection,
+  convertCurrentPdfInteractive,
+  resumeQueue,
+} from "./markdownUI";
+import { readSettings } from "./markdownPrep/settings";
 import { glossary } from "./glossary";
 import { openGlossaryManager } from "./glossaryUI";
 import {
@@ -58,6 +64,7 @@ class PreferencesPane {
   private stopQueue = false;
   private modelCache = new Map<string, string[]>();
   private profilesTimer?: number;
+  private markdownTestRunning = false;
 
   constructor(private readonly win: Window) {
     this.doc = win.document;
@@ -77,6 +84,7 @@ class PreferencesPane {
     this.initTest();
     this.initStorage();
     this.initGlossary();
+    this.initMarkdown();
     initTagEditor(this.doc);
     this.refreshDerived();
     this.win.addEventListener("unload", () => this.dispose(), { once: true });
@@ -251,6 +259,69 @@ class PreferencesPane {
     this.el<HTMLTextAreaElement>("api-system").placeholder =
       DEFAULT_SYSTEM_PROMPT;
     this.scheduleProfiles();
+    this.refreshMarkdownState();
+  }
+
+  // ---- Markdown provider configuration
+  private initMarkdown() {
+    this.bindSecret("markdown-token", "markdown.cloud.token");
+    this.bindSecret("markdown-mineru-token", "markdown.mineru.token");
+    for (const id of ["markdown-test", "markdown-mineru-test"])
+      this.el(id).addEventListener(
+        "click",
+        () => void this.runMarkdownTest(id),
+      );
+    this.el("markdown-convert-current").addEventListener(
+      "click",
+      () => void convertCurrentPdfInteractive(),
+    );
+    for (const link of this.root.querySelectorAll<HTMLAnchorElement>(
+      "[data-markdown-link]",
+    ))
+      link.addEventListener("click", (event: Event) => {
+        event.preventDefault();
+        Zotero.launchURL(link.href);
+      });
+    for (const control of this.controls())
+      if (control.dataset.pref?.startsWith("markdown."))
+        control.addEventListener("change", () => {
+          resumeQueue();
+          this.refreshMarkdownState();
+        });
+    this.refreshMarkdownState();
+  }
+  private refreshMarkdownState() {
+    const provider = readSettings().provider;
+    for (const panel of this.root.querySelectorAll<HTMLElement>(
+      "[data-markdown-provider]",
+    ))
+      panel.hidden = panel.dataset.markdownProvider !== provider;
+  }
+  private async runMarkdownTest(id: string) {
+    if (this.markdownTestRunning) return;
+    this.markdownTestRunning = true;
+    const button = this.el<HTMLButtonElement>(id),
+      result = this.el(id + "-result");
+    button.disabled = true;
+    result.textContent = getString("markdown-test-running");
+    try {
+      const mineru = readSettings().provider === "mineru-cloud";
+      await setSecret(
+        mineru ? "markdown.mineru.token" : "markdown.cloud.token",
+        this.el<HTMLInputElement>(
+          mineru ? "markdown-mineru-token" : "markdown-token",
+        ).value.trim(),
+      );
+      const outcome = await testCurrentProviderConnection();
+      result.textContent = markdownTestLabel(outcome.detail);
+      resumeQueue();
+    } catch (error) {
+      ztoolkit.log("[Glossa] Markdown connection test failed", error);
+      result.textContent = getString("markdown-test-unknown");
+    } finally {
+      this.markdownTestRunning = false;
+      button.disabled = false;
+    }
   }
 
   // ---- keys
@@ -261,7 +332,10 @@ class PreferencesPane {
     input.value = getSecret(name);
     input.addEventListener("change", () => {
       setSecret(name, input.value.trim())
-        .then(() => this.scheduleProfiles())
+        .then(() => {
+          this.scheduleProfiles();
+          if (name.startsWith("markdown.")) resumeQueue();
+        })
         .catch((error) => ztoolkit.log(`[Glossa] cannot save ${name}`, error));
     });
   }
@@ -946,6 +1020,23 @@ class PreferencesPane {
       }
     });
   }
+}
+
+/** Stable detail codes from the PaddleOCR connection probe → FTL labels. */
+const MARKDOWN_TEST_KEYS: Record<string, string> = {
+  ok: "markdown-test-ok",
+  "no-token": "markdown-test-no-token",
+  disabled: "markdown-test-disabled",
+  network: "markdown-test-network",
+  "bad-endpoint": "markdown-test-bad-endpoint",
+  "bad-token": "markdown-test-bad-token",
+  "rate-limited": "markdown-test-rate-limited",
+  "api-error": "markdown-test-api-error",
+  unsupported: "markdown-test-unsupported",
+};
+
+function markdownTestLabel(detail: string): string {
+  return getString(MARKDOWN_TEST_KEYS[detail] || "markdown-test-unknown");
 }
 
 function applyChatPreset(preset: ChatPreset) {

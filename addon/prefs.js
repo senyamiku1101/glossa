@@ -27,3 +27,22 @@ pref("profiles.active", "");
 pref("translation.draftProfile", "");
 pref("translation.reviewProfile", "");
 pref("board.expanded", false);
+
+// Markdown attachment parsing. API keys live in the login manager.
+pref("markdown.enabled", true);
+pref("markdown.provider", "paddleocr-cloud");
+pref("markdown.autoOnImport", true);
+pref("markdown.autoOnChange", true);
+pref("markdown.concurrency", 1);
+pref("markdown.readContext", true);
+pref("markdown.bundleCleanupDone", false);
+pref(
+  "markdown.cloud.endpoint",
+  "https://paddleocr.aistudio-app.com/api/v2/ocr/jobs",
+);
+pref("markdown.cloud.model", "PP-StructureV3");
+pref("markdown.mineru.endpoint", "https://mineru.net");
+pref("markdown.mineru.modelVersion", "vlm");
+pref("markdown.mineru.language", "ch");
+pref("markdown.mineru.isOcr", false);
+pref("markdown.mineru.selfHosted", false);

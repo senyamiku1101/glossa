@@ -60,3 +60,25 @@ pref-translation-review-profile = 审校配置
 pref-translation-choose-profile = 请选择配置档
 pref-translation-profile-missing = 配置档已删除，请重新选择
 pref-translation-help = 普通翻译继续使用当前模型。协同翻译依次调用两个配置档，耗时和费用更高；原文及初稿将发送到所选服务。仅审校已有译文时只调用审校配置，此时会把原文和该译文发送到审校服务。
+
+# ---- 论文正文准备（仅 PaddleOCR 云）----
+
+pref-tab-markdown = 论文正文
+pref-markdown-provider-title = 服务商配置
+pref-markdown-provider = 解析引擎
+pref-markdown-get-key = 获取 API Key ↗
+pref-markdown-token = API Key
+pref-markdown-endpoint = Endpoint
+pref-markdown-base-url = Base URL
+pref-markdown-model = 模型
+pref-markdown-model-version = 模型版本
+pref-markdown-language = 语言
+pref-markdown-advanced = 高级
+pref-markdown-ocr = 强制 OCR
+pref-markdown-self-hosted = 自建服务（允许 HTTP）
+pref-markdown-test = 测试连接
+pref-markdown-automation-title = 自动化与阅读
+pref-markdown-enabled = 启用正文准备
+pref-markdown-auto-import = 新导入 PDF 自动转换
+pref-markdown-read-context = 对话和检索优先读取 Markdown 正文
+pref-markdown-convert-current = 转换当前 PDF

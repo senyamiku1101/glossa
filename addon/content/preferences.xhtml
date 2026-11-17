@@ -52,6 +52,12 @@
             data-tab="other"
             data-l10n-id="pref-tab-other"
           ></html:button>
+          <html:button
+            class="glossa-tab"
+            role="tab"
+            data-tab="markdown"
+            data-l10n-id="pref-tab-markdown"
+          ></html:button>
         </html:div>
         <!-- Chat model -->
         <html:div class="glossa-tabpanel" role="tabpanel" data-panel="chat">
@@ -465,6 +471,166 @@
             ></html:button>
           </html:div>
         </html:div>
+
+        <html:div
+          class="glossa-tabpanel"
+          role="tabpanel"
+          data-panel="markdown"
+          hidden="hidden"
+        >
+          <html:section class="glossa-md-card"
+            ><html:h3 data-l10n-id="pref-markdown-provider-title"></html:h3>
+            <html:label class="glossa-md-setting"
+              ><html:span data-l10n-id="pref-markdown-provider"></html:span
+              ><html:select data-pref="markdown.provider"
+                ><html:option value="paddleocr-cloud"
+                  >paddleocr-cloud</html:option
+                ><html:option value="mineru-cloud"
+                  >mineru-cloud</html:option
+                ></html:select
+              ></html:label
+            >
+            <html:div
+              data-markdown-provider="paddleocr-cloud"
+              class="glossa-md-provider"
+            >
+              <html:a
+                href="https://aistudio.baidu.com/account/accessToken"
+                data-markdown-link="true"
+                data-l10n-id="pref-markdown-get-key"
+              ></html:a>
+              <html:div class="glossa-md-setting"
+                ><html:span data-l10n-id="pref-markdown-token"></html:span
+                ><html:div class="glossa-field"
+                  ><html:input
+                    id="__addonRef__-markdown-token"
+                    type="password" /><html:button
+                    type="button"
+                    class="glossa-key-toggle"
+                    data-for="__addonRef__-markdown-token"
+                  ></html:button></html:div></html:div
+              ><html:label class="glossa-md-setting"
+                ><html:span data-l10n-id="pref-markdown-endpoint"></html:span
+                ><html:input
+                  type="text"
+                  data-pref="markdown.cloud.endpoint" /></html:label
+              ><html:label class="glossa-md-setting"
+                ><html:span data-l10n-id="pref-markdown-model"></html:span
+                ><html:input
+                  type="text"
+                  data-pref="markdown.cloud.model" /></html:label
+              ><html:div class="glossa-md-actions"
+                ><html:button
+                  type="button"
+                  id="__addonRef__-markdown-test"
+                  data-l10n-id="pref-markdown-test"
+                ></html:button
+                ><html:span
+                  id="__addonRef__-markdown-test-result"
+                  role="status"
+                  class="glossa-hint"
+                ></html:span
+              ></html:div>
+            </html:div>
+            <html:div
+              data-markdown-provider="mineru-cloud"
+              class="glossa-md-provider"
+              hidden="hidden"
+            >
+              <html:a
+                href="https://mineru.net/apiManage/token"
+                data-markdown-link="true"
+                data-l10n-id="pref-markdown-get-key"
+              ></html:a>
+              <html:div class="glossa-md-setting"
+                ><html:span data-l10n-id="pref-markdown-token"></html:span
+                ><html:div class="glossa-field"
+                  ><html:input
+                    id="__addonRef__-markdown-mineru-token"
+                    type="password" /><html:button
+                    type="button"
+                    class="glossa-key-toggle"
+                    data-for="__addonRef__-markdown-mineru-token"
+                  ></html:button></html:div></html:div
+              ><html:label class="glossa-md-setting"
+                ><html:span data-l10n-id="pref-markdown-base-url"></html:span
+                ><html:input type="text" data-pref="markdown.mineru.endpoint"
+              /></html:label>
+              <html:details class="glossa-md-advanced"
+                ><html:summary
+                  data-l10n-id="pref-markdown-advanced"
+                ></html:summary>
+                <html:label class="glossa-md-setting"
+                  ><html:span
+                    data-l10n-id="pref-markdown-model-version"
+                  ></html:span
+                  ><html:select data-pref="markdown.mineru.modelVersion"
+                    ><html:option value="vlm">vlm</html:option
+                    ><html:option value="pipeline"
+                      >pipeline</html:option
+                    ></html:select
+                  ></html:label
+                ><html:label class="glossa-md-setting"
+                  ><html:span data-l10n-id="pref-markdown-language"></html:span
+                  ><html:select data-pref="markdown.mineru.language"
+                    ><html:option value="ch">ch</html:option
+                    ><html:option value="en">en</html:option></html:select
+                  ></html:label
+                >
+                <html:label class="glossa-check"
+                  ><html:input
+                    type="checkbox"
+                    data-pref="markdown.mineru.isOcr" /><html:span
+                    data-l10n-id="pref-markdown-ocr"
+                  ></html:span></html:label
+                ><html:label class="glossa-check"
+                  ><html:input
+                    type="checkbox"
+                    data-pref="markdown.mineru.selfHosted" /><html:span
+                    data-l10n-id="pref-markdown-self-hosted"
+                  ></html:span
+                ></html:label> </html:details
+              ><html:div class="glossa-md-actions"
+                ><html:button
+                  type="button"
+                  id="__addonRef__-markdown-mineru-test"
+                  data-l10n-id="pref-markdown-test"
+                ></html:button
+                ><html:span
+                  id="__addonRef__-markdown-mineru-test-result"
+                  role="status"
+                  class="glossa-hint"
+                ></html:span></html:div></html:div
+          ></html:section>
+          <html:section class="glossa-md-card"
+            ><html:h3 data-l10n-id="pref-markdown-automation-title"></html:h3>
+            <html:label class="glossa-check"
+              ><html:input
+                type="checkbox"
+                data-pref="markdown.enabled" /><html:span
+                data-l10n-id="pref-markdown-enabled"
+              ></html:span></html:label
+            ><html:label class="glossa-check"
+              ><html:input
+                type="checkbox"
+                data-pref="markdown.autoOnImport" /><html:span
+                data-l10n-id="pref-markdown-auto-import"
+              ></html:span></html:label
+            ><html:label class="glossa-check"
+              ><html:input
+                type="checkbox"
+                data-pref="markdown.readContext" /><html:span
+                data-l10n-id="pref-markdown-read-context"
+              ></html:span
+            ></html:label>
+            <html:div class="glossa-md-actions"
+              ><html:button
+                type="button"
+                id="__addonRef__-markdown-convert-current"
+                data-l10n-id="pref-markdown-convert-current"
+              ></html:button
+            ></html:div> </html:section
+        ></html:div>
       </html:div>
     </html:div>
 

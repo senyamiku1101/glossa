@@ -1542,6 +1542,169 @@ item-details.glossa-workspace-active item-pane-header {
   line-height: 1.45;
 }
 
+/* Compact native-theme task surface; SVG icons inherit text colours. */
+.glossa-bgtasks-root {
+  position: relative;
+  flex: none;
+  color: var(--glossa-fg);
+}
+.glossa-bgtasks-root button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+}
+.glossa-bgtasks-trigger {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: var(--glossa-muted) !important;
+}
+.glossa-bgtasks-trigger:hover,
+.glossa-bgtasks-action:hover,
+.glossa-bgtasks-clear:hover {
+  background: var(--glossa-user-bg);
+}
+.glossa-bgtasks-root button:focus-visible {
+  outline: 2px solid var(--color-accent, #4386cf);
+  outline-offset: 1px;
+}
+.glossa-bgtasks-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.glossa-bgtasks-root[data-state="failed"] .glossa-bgtasks-trigger::after,
+.glossa-bgtasks-root[data-state="done"] .glossa-bgtasks-trigger::after {
+  content: "";
+  position: absolute;
+  right: 2px;
+  top: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--glossa-error);
+  box-shadow: 0 0 0 2px var(--glossa-bg);
+}
+.glossa-bgtasks-root[data-state="done"] .glossa-bgtasks-trigger::after {
+  background: var(--glossa-bgtasks-success, #39a36a);
+}
+.glossa-bgtasks-root[data-state="running"] .glossa-bgtasks-trigger {
+  color: var(--color-accent, #4386cf) !important;
+}
+.glossa-bgtasks-panel {
+  position: absolute;
+  inset-inline-end: 0;
+  top: calc(100% + 6px);
+  width: 320px;
+  max-width: calc(100vw - 24px);
+  background: var(--glossa-bg);
+  border: 1px solid var(--glossa-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px #0003;
+  z-index: 100;
+  font-size: 12px;
+}
+.glossa-bgtasks-panel[hidden] {
+  display: none !important;
+}
+.glossa-bgtasks-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--glossa-border);
+}
+.glossa-bgtasks-header strong {
+  flex: 1;
+  font-size: 12px;
+}
+.glossa-bgtasks-clear {
+  color: var(--glossa-muted) !important;
+  font-size: 11px !important;
+  border-radius: 4px;
+  padding: 3px 5px;
+}
+.glossa-bgtasks-clear:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.glossa-bgtasks-list {
+  max-height: 280px;
+  overflow: auto;
+  padding: 4px;
+}
+.glossa-bgtasks-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+.glossa-bgtasks-row:hover {
+  background: var(--glossa-user-bg);
+}
+.glossa-bgtasks-row[data-status="done"] > .glossa-bgtasks-icon,
+.glossa-bgtasks-row[data-status="partial"] > .glossa-bgtasks-icon {
+  color: var(--glossa-bgtasks-success, #39a36a);
+}
+.glossa-bgtasks-row[data-status="failed"] > .glossa-bgtasks-icon {
+  color: var(--glossa-error);
+}
+.glossa-bgtasks-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.glossa-bgtasks-status,
+.glossa-bgtasks-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.glossa-bgtasks-title {
+  color: var(--glossa-muted);
+  font-size: 11px;
+}
+.glossa-bgtasks-action {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 5px;
+}
+.glossa-bgtasks-empty {
+  padding: 15px 10px;
+  color: var(--glossa-muted);
+  text-align: center;
+}
+.glossa-bgtasks-spin {
+  animation: glossa-bgtasks-rotate 1s linear infinite;
+}
+@keyframes glossa-bgtasks-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .glossa-bgtasks-spin {
+    animation: none;
+  }
+}
+
 /* Narrow panes put the paper title on its own line instead of truncating. */
 @media (max-width: 480px) {
   .glossa-board-list {

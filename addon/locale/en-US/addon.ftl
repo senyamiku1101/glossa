@@ -203,3 +203,51 @@ glossa-board-collapse-text = Show less
 glossa-glossary-open-error = Could not open the glossary window. Please retry.
 glossa-pref-glossary-count = { $count } saved terms
 glossa-pref-translation-same-profile = Both stages use the same profile; only two different models make this a two-model review.
+
+# ---- Paper body preparation (PaddleOCR cloud only) ----
+# These ids do not start with "glossa", so the build prefixes them; getString()
+# takes the unprefixed key. Status and caveat ids follow the frozen codes.
+markdown-no-current-pdf = No PDF is open or selected. Open a paper in the reader, or select items that have a PDF, and try again.
+markdown-test-running = Testing…
+markdown-test-ok = Connection OK.
+markdown-test-no-token = Set the API token first.
+markdown-test-disabled = Cloud parsing is turned off in settings.
+markdown-test-network = Could not reach the service.
+markdown-test-bad-endpoint = Check the service endpoint.
+markdown-test-bad-token = The service rejected the token.
+markdown-test-api-error = The service returned an error.
+markdown-test-unsupported = This endpoint does not support the selected parser API.
+markdown-test-unknown = The connection test did not finish.
+markdown-test-rate-limited = The service is rate-limiting requests; try again later.
+
+markdown-menu-convert = Convert body to Markdown
+markdown-menu-delete = Delete body Markdown
+markdown-body-none = No managed Markdown body for the selected items.
+markdown-cloud-ready = Parser service configured
+markdown-cloud-missing = Configure the parser service and API Key
+background-tasks-title = Background tasks
+background-tasks-clear = Clear finished
+background-tasks-close = Close
+background-tasks-empty = No background tasks
+background-tasks-cancel = Cancel
+background-tasks-retry = Retry
+background-tasks-settings = Open settings
+background-tasks-open = Open Markdown
+background-tasks-pages = Parsing { $page }/{ $pages } pages
+background-tasks-running = Parsing
+background-tasks-status-done = Completed
+background-tasks-status-partial = Completed · partial content
+background-tasks-status-failed = Failed
+background-tasks-status-cancelled = Cancelled
+background-tasks-status-queued = Queued
+background-tasks-status-waiting-file = Waiting for file
+background-tasks-status-waiting-config = Configuration required
+background-tasks-status-stale = Body outdated
+background-tasks-status-read-only = Read-only library
+background-tasks-status-needs-parser = Parser required
+background-tasks-status-no-pdf = No PDF
+background-tasks-status-unsupported = Unsupported
+background-tasks-stage-uploading = Uploading
+background-tasks-stage-polling = Waiting for parsing
+background-tasks-stage-downloading = Downloading result
+background-tasks-stage-converting = Preparing Markdown

@@ -60,3 +60,25 @@ pref-translation-review-profile = Review profile
 pref-translation-choose-profile = Select a profile
 pref-translation-profile-missing = Profile deleted; select another
 pref-translation-help = Standard translation keeps using the current model. Collaborative translation calls the two profiles in sequence, taking more time and cost; the source and draft are sent to the selected services. Reviewing an existing translation calls only the review profile, and sends the source and that translation to the review service.
+
+# ---- Paper body preparation (PaddleOCR cloud only) ----
+
+pref-tab-markdown = Paper body
+pref-markdown-provider-title = Parser service
+pref-markdown-provider = Parsing engine
+pref-markdown-get-key = Get API Key ↗
+pref-markdown-token = API Key
+pref-markdown-endpoint = Endpoint
+pref-markdown-base-url = Base URL
+pref-markdown-model = Model
+pref-markdown-model-version = Model version
+pref-markdown-language = Language
+pref-markdown-advanced = Advanced
+pref-markdown-ocr = Force OCR
+pref-markdown-self-hosted = Self-hosted service (allow HTTP)
+pref-markdown-test = Test connection
+pref-markdown-automation-title = Automation and reading
+pref-markdown-enabled = Enable body preparation
+pref-markdown-auto-import = Convert newly imported PDFs automatically
+pref-markdown-read-context = Prefer Markdown bodies for chat and retrieval
+pref-markdown-convert-current = Convert current PDF

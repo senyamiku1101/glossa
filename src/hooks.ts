@@ -6,6 +6,18 @@ import { chat } from "./modules/chat";
 import { disposeChatViews, initChatViews } from "./modules/chatView";
 import { conversations } from "./modules/conversations";
 import { disposeGlossaryWindows } from "./modules/glossaryUI";
+import { initPaddleCloud } from "./modules/markdownPrep/paddle";
+import { initMineruCloud } from "./modules/markdownPrep/mineru";
+import { cleanupLegacyPdfBundlesOnce } from "./modules/markdownPrep/store";
+import {
+  disposeMarkdownQueue,
+  initMarkdownQueue,
+} from "./modules/markdownPrep/queue";
+import {
+  disposeMarkdownUI,
+  registerMarkdownUI,
+  unregisterMarkdownUI,
+} from "./modules/markdownUI";
 import { runner } from "./modules/runner";
 import { initPreferencesPane } from "./modules/preferences";
 import {
@@ -34,6 +46,27 @@ async function onStartup() {
   registerSidebar();
   registerSelectionPopup();
 
+  // Cloud source first, then the queue that reads it. Both are defensive: a
+  // failure here must not stop the rest of the plugin from starting.
+  try {
+    await initPaddleCloud();
+  } catch (error) {
+    ztoolkit.log("[Glossa] PaddleOCR cloud init failed", error);
+  }
+  try {
+    await initMineruCloud();
+  } catch (error) {
+    ztoolkit.log("[Glossa] MinerU cloud init failed", error);
+  }
+  try {
+    await initMarkdownQueue();
+  } catch (error) {
+    ztoolkit.log("[Glossa] markdown queue init failed", error);
+  }
+  void cleanupLegacyPdfBundlesOnce().catch((error) =>
+    ztoolkit.log("[Glossa] legacy Markdown cleanup failed", error),
+  );
+
   await Promise.all(
     Zotero.getMainWindows().map((win) => onMainWindowLoad(win)),
   );
@@ -44,9 +77,19 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow) {
   addon.data.ztoolkit = createZToolkit();
   win.MozXULElement.insertFTLIfNeeded(`${config.addonRef}-mainWindow.ftl`);
   chat.register(win);
+  try {
+    registerMarkdownUI(win);
+  } catch (error) {
+    ztoolkit.log("[Glossa] markdown UI registration failed", error);
+  }
 }
 
 async function onMainWindowUnload(win: Window) {
+  try {
+    unregisterMarkdownUI(win);
+  } catch (error) {
+    ztoolkit.log("[Glossa] markdown UI unregister failed", error);
+  }
   chat.unregister(win);
   ztoolkit.unregisterAll();
 }
@@ -54,6 +97,16 @@ async function onMainWindowUnload(win: Window) {
 function onShutdown() {
   runner.stop();
   chat.dispose();
+  try {
+    disposeMarkdownUI();
+  } catch (error) {
+    ztoolkit.log("[Glossa] markdown UI dispose failed", error);
+  }
+  try {
+    disposeMarkdownQueue();
+  } catch (error) {
+    ztoolkit.log("[Glossa] markdown queue dispose failed", error);
+  }
   unregisterSidebar();
   unregisterSelectionPopup();
   disposeChatViews();

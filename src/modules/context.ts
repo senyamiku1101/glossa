@@ -9,6 +9,13 @@ import {
 } from "../utils/text";
 import { canEmbed, embedTexts, embeddingIdentity } from "./llm";
 import { getPDFPlainText, getPDFSelection } from "./pdf";
+import { readSettings } from "./markdownPrep/settings";
+import {
+  getBodyCacheTag,
+  readBodyForContext,
+  type ContextBody,
+} from "./markdownPrep/store";
+import { getStateForPDF } from "./markdownPrep/queue";
 
 /** What the user is looking at: metadata item plus the PDF to read from. */
 export type Target = {
@@ -285,14 +292,45 @@ function rankByKeywords(chunks: string[], query: string, k: number) {
 async function getDocIndex(target: Target): Promise<DocIndex | undefined> {
   const attachment = target.attachment || findPDFAttachment(target.item);
   if (attachment?.isPDFAttachment()) {
+    const state = getStateForPDF(attachment);
     const mtime = await attachment.attachmentModificationTime;
-    const cacheKey = `${attachment.libraryID}/${attachment.key}@${mtime ?? 0}`;
+    // The generated body changes independently of the PDF file, so its
+    // identity participates in the index cache key: a re-converted (or
+    // synced/edited/migrated) body must re-index. The bundle body file's own
+    // size/mtime is included so even a journal-less WebDAV download re-indexes.
+    const hostedTag = await getBodyCacheTag(attachment, state);
+    const cacheKey = `${attachment.libraryID}/${attachment.key}@${mtime ?? 0}${hostedTag}`;
     const hit = indexCache.get(cacheKey);
     if (hit) {
       // refresh LRU position
       indexCache.delete(cacheKey);
       indexCache.set(cacheKey, hit);
       return hit;
+    }
+    // Prepared Markdown wins over re-extracting the PDF, but only when it still
+    // matches the current source file. A stale/missing/invalid bundle falls back
+    // to a legacy body, then to the existing extractor below; this read path
+    // never uploads anything and never writes.
+    const settings = readSettings();
+    if (settings.readContext) {
+      const hosted = await readBodyForContext(attachment, {
+        legacyAttachmentKey: state?.hostedAttachmentKey,
+        fingerprint: state?.source,
+        // The working cache is a fallback only for a read-only library, where a
+        // bundle cannot be written. A missing product in a writable library
+        // falls back to the normal PDF text path instead.
+        allowCache: state?.status === "read-only",
+      });
+      if (hosted?.fresh) {
+        const index = hostedDocIndex(hosted);
+        rememberIndex(cacheKey, index);
+        return index;
+      }
+      if (hosted && !hosted.fresh) {
+        ztoolkit.log(
+          "[Glossa] prepared Markdown is stale; falling back to PDF text",
+        );
+      }
     }
     const text = await getPDFPlainText(attachment);
     if (text.trim()) {
@@ -310,15 +348,113 @@ async function getDocIndex(target: Target): Promise<DocIndex | undefined> {
             ? `${flat.slice(0, FULLTEXT_LIMIT)}\n[… truncated: first ${FULLTEXT_LIMIT} of ${flat.length} characters]`
             : flat,
       };
-      indexCache.set(cacheKey, index);
-      if (indexCache.size > MAX_CACHED_DOCS) {
-        indexCache.delete(indexCache.keys().next().value!);
-      }
+      rememberIndex(cacheKey, index);
       return index;
     }
   }
   const abstract = String(target.item?.getField("abstractNote") || "");
   return abstract ? { chunks: splitText(abstract) } : undefined;
+}
+
+function rememberIndex(cacheKey: string, index: DocIndex) {
+  indexCache.set(cacheKey, index);
+  if (indexCache.size > MAX_CACHED_DOCS) {
+    indexCache.delete(indexCache.keys().next().value!);
+  }
+}
+
+/** Human/trace-visible provenance line for a prepared Markdown body. */
+function hostedSourceLabel(hosted: ContextBody): string {
+  const parts = [
+    "Glossa Markdown",
+    hosted.meta.quality,
+    `${hosted.meta.pageCount || "?"} pages`,
+  ];
+  if (hosted.origin === "cache") parts.push("cached");
+  else if (hosted.origin === "hosted-md") parts.push("Markdown attachment");
+  if (hosted.userModified) parts.push("user-edited");
+  return `[Source: ${parts.join(" · ")}]`;
+}
+
+/**
+ * Turn the prepared Markdown into the same chunk/text structure the extractor
+ * path produces. Page comments become `(p.N)` chunk prefixes; HTML comments
+ * are stripped from the text sent to the model.
+ */
+function hostedDocIndex(hosted: ContextBody): DocIndex {
+  const { body, sections } = splitPreparedMarkdown(hosted.markdown);
+  const chunks: string[] = [];
+  if (sections.length) {
+    for (const section of sections) {
+      for (const chunk of splitText(section.text)) {
+        chunks.push(section.label ? `(p.${section.label}) ${chunk}` : chunk);
+        if (chunks.length >= MAX_CHUNKS) break;
+      }
+      if (chunks.length >= MAX_CHUNKS) break;
+    }
+  } else {
+    chunks.push(...splitText(body).slice(0, MAX_CHUNKS));
+  }
+  if (chunks.length > MAX_CHUNKS) {
+    ztoolkit.log(`[Glossa] indexing first ${MAX_CHUNKS} prepared chunks`);
+  }
+  const flat = body.replace(/[ \t]+/g, " ").trim();
+  const truncated = flat.length > FULLTEXT_LIMIT;
+  const text = [
+    hostedSourceLabel(hosted),
+    truncated
+      ? `${flat.slice(0, FULLTEXT_LIMIT)}\n[… truncated: first ${FULLTEXT_LIMIT} of ${flat.length} characters]`
+      : flat,
+  ].join("\n");
+  return { chunks, text };
+}
+
+type PreparedSection = { label: string; text: string };
+
+/**
+ * Strip our metadata/page comments and group the body by page, so excerpt
+ * chunks can carry the page they came from. A body without page markers is
+ * returned as one unlabelled section.
+ */
+export function splitPreparedMarkdown(markdown: string): {
+  body: string;
+  sections: PreparedSection[];
+} {
+  const pageRe = /^<!--\s*page\s+(\d+)(?:\s*\(printed\s+(.+?)\))?\s*-->$/i;
+  const sections: PreparedSection[] = [];
+  const bodyLines: string[] = [];
+  let current: { label: string; lines: string[] } | undefined;
+  // Remove multi-line comments as well, preserving only page delimiters.
+  const visible = markdown.replace(/<!--[\s\S]*?-->/g, (comment) =>
+    pageRe.test(comment.trim()) ? comment : "",
+  );
+  for (const rawLine of visible.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const page = pageRe.exec(line);
+    if (page) {
+      if (current) {
+        sections.push({
+          label: current.label,
+          text: current.lines.join("\n").trim(),
+        });
+      }
+      const printed = page[2]?.trim();
+      current = { label: printed || page[1], lines: [] };
+      continue;
+    }
+    // Drop every remaining HTML comment (metadata/caveat notes).
+    const cleaned = rawLine.replace(/<!--[\s\S]*?-->/g, "");
+    if (!cleaned.trim()) continue;
+    bodyLines.push(cleaned);
+    if (current) current.lines.push(cleaned);
+  }
+  if (current) {
+    sections.push({
+      label: current.label,
+      text: current.lines.join("\n").trim(),
+    });
+  }
+  return { body: bodyLines.join("\n"), sections };
 }
 
 function findPDFAttachment(item?: Zotero.Item) {

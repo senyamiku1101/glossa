@@ -39,6 +39,7 @@ Builds before 0.2.18 pointed at a placeholder repository address, so they cannot
 - API keys: Zotero's login manager (`logins.json`, encrypted with the profile's `key4.db`), never in `prefs.js`.
 - Conversations, glossary and translation board: plain local JSON under `<Zotero data directory>/glossa/`; they are not Zotero notes and do not sync.
 - Prompts and document context leave your machine only to the model provider you configured.
+- PDF bodies: after you configure **PaddleOCR** or **MinerU** in **Settings → Glossa → Paper body**, manual conversion and automatic conversion upload PDFs to the selected service according to your settings; there is no separate upload-permission dialog. API keys are kept in Zotero's login manager as `markdown.cloud.token` and `markdown.mineru.token`. Prepared Markdown attachments and their images use Zotero's native attachment synchronization, including WebDAV; conversations, glossary and board remain local. Glossa adds no server or telemetry. Cancelling a request does not necessarily cancel a job the service already accepted.
 - No telemetry, no license server, no encrypted payloads.
 
 ## Compatibility
@@ -62,6 +63,8 @@ Zotero 7, 8, 9 and 10 (`strict_min_version` 7.0, `strict_max_version` 10.*). Any
 - **Personal glossary**: add a source term and its translation straight from the PDF selection popup; a **Glossary** entry in the chat header, and a **Manage glossary…** button in Glossa's settings, let you search, edit and delete terms. It is a plain local list saved in its own file (`<Zotero data directory>/glossa/glossary.json`), separate from settings and profiles. Matching runs locally; only the entries that match the text being translated are added to that request, never the whole glossary, and no extra API call is made. Terms are guidance rather than a guarantee: the model may not follow every entry, and a large glossary adds some local matching cost. It has no categories, import/export or subscriptions.
 - **Translation board**: every translation card has an **Add to board** button. The collapsible board at the top of the Glossa pane collects up to 50 translations across all items (each with its source text), and can copy an entry, remove one, show the original text, or jump back to the source item or PDF; **Clear** empties it after a confirmation. It is a local scratch board saved in `<Zotero data directory>/glossa/board.json` and survives a restart. It is not a Zotero note and does not sync.
 - **Delete a translation**: every committed translation card has a **Delete** action. After confirmation it removes that translation together with the question that produced it; a copy already added to the translation board is kept.
+- **Markdown bodies (0.2.19)**: convert PDFs with **PaddleOCR** or **MinerU** and test the selected connection in settings. Results are real Zotero Markdown child attachments titled **[Glossa] Body · <PDF filename>**; a standalone PDF gets a related attachment in the same library and collections. The readable `.md` file and its images are stored flat in that Markdown attachment's own storage directory and use relative links, so Zotero / WebDAV native synchronization restores the complete body across devices. Chat and retrieval prefer the prepared body for the matching source PDF, with raw PDF text as fallback. Early experimental `glossa-body.md`, `glossa-meta.json` and strictly named `glossa-asset-…` leftovers are automatically cleaned from PDF storage directories without touching the PDFs or other user files.
+- **Compact body workflow**: item and collection context menus offer only **Convert body to Markdown** and **Delete body Markdown**; convert again to refresh a body. The **Background tasks** icon in the Glossa header opens a compact popover with live progress, cancel, retry, open attachment and clear finished tasks. Two settings cards cover **Parser service** and **Automation and reading**, including automatic conversion of newly imported PDFs and preferred Markdown reading. PaddleOCR, MinerU and cross-device WebDAV sync have been successfully tested with real documents.
 - **Research actions**: Evidence audit, Method map, Precise translation, Next questions — editable; templates only substitute `{{input}}` `{{selection}}` `{{abstract}}` `{{title}}` `{{authors}}` `{{year}}` `{{related}}` `{{fulltext}}`
 - Retrieval via embeddings with keyword fallback; chunks and vectors cached per PDF
 - API keys stored in Zotero's login manager, never in `prefs.js`
@@ -122,6 +125,8 @@ See [PRINCIPLES.md](PRINCIPLES.md).
 - 个人术语库：在 PDF 划词弹窗里直接加入原词与译法；点聊天头部的「术语库」入口，或在 Glossa 设置页点「管理术语库…」，都可以搜索、修改、删除。它是一份独立的本地记录，保存在自己的文件中（`<Zotero 数据目录>/glossa/glossary.json`），与设置和配置档分开。匹配在本地完成，只有命中本次翻译原文的词条会随该次翻译请求发送，不会发送整库，也不额外调用接口。词条是参考而非保证：模型可能不遵循个别条目，词库很大时本地匹配会有少量开销。没有分类，不支持导入导出或订阅。
 - 翻译看板：每张译文卡片都有「加入看板」按钮。Glossa 面板顶部的可折叠看板会跨文献收集最多 50 条译文（连同原文），可复制、单条移除、展开查看原文、点击来源标题跳回文献或 PDF；「清空」需确认后才会清空。内容保存在本地 `<Zotero 数据目录>/glossa/board.json`，重启 Zotero 后仍在；它不是 Zotero 笔记，也不同步。
 - 删除译文：每张已完成的译文卡片都有「删除」按钮。确认后会删除该条译文以及产生它的问题；已加入看板的副本会保留。
+- Markdown 正文（0.2.19）：支持 **PaddleOCR** 和 **MinerU** 双服务商，可在设置中测试连接。结果保存为真实的 Zotero Markdown 子附件，标题为 **[Glossa] Body · <PDF文件名>**；独立 PDF 则创建同库、同分类的关联附件。可读的 `.md` 主文件与图片平铺在该 Markdown 附件自己的存储目录中，使用相对链接，随 Zotero / WebDAV 原生附件同步跨设备完整恢复。对话和检索优先读取与源 PDF 精准匹配的正文，缺失时回退到 PDF 文本。早期实验版本遗留在 PDF 目录内的 `glossa-body.md`、`glossa-meta.json` 和严格匹配的 `glossa-asset-…` 文件会自动清理，不触碰 PDF 或其他用户文件。
+- 极简正文工作流：条目和分类右键菜单只保留「转换正文 Markdown」与「删除正文 Markdown」，再次转换即可更新正文。Glossa 头部的「后台任务」图标打开紧凑浮层，提供实时进度、取消、重试、打开附件和清除已完成操作。设置页以「服务商配置」「自动化与阅读」两张卡片管理服务、新导入 PDF 自动转换及优先读取 Markdown。PaddleOCR、MinerU 与跨设备 WebDAV 同步均已通过真实文献实测。
 - 使用你自己的 API Key（OpenAI 兼容接口）。密钥存放在 Zotero 登录管理器里，不写入 `prefs.js`。
 - 每篇文献可保留多个会话；「新对话」创建新会话并保留历史。点击历史图标进入独立的聊天列表，可搜索、切换、重命名、删除，或保存到 Zotero 笔记；回答生成中可以点「停止」。
 - 划词弹窗将「选区 / 选段」「翻译 / 协同翻译 / 详细解释」和发送箭头放在同一排。「选段」扩展到选区覆盖的各个完整自然段，保留原顺序和段落间隔；设置中可选择默认范围。选择默认选段只会自动识别，点击箭头才发送，结果保存到当前文献的 Glossa 会话。识别中或识别失败时发送箭头为灰色并禁用，只有获得可用文字后才变绿；发送过程中也保持灰色禁用。无法确认完整边界（如复杂公式断开正文）时不发送，仍保留「选段」并显示诊断，可重新划选文字或切换范围重新识别，或手动切换为「选区」。
@@ -141,6 +146,7 @@ See [PRINCIPLES.md](PRINCIPLES.md).
 - 密钥存放在 Zotero 登录管理器，不写入 `prefs.js`。
 - 会话、术语库与翻译看板都是本地 JSON（`<Zotero 数据目录>/glossa/`），不是 Zotero 笔记，也不同步。
 - 提示词与文献内容只会发送给你自己配置的模型服务商。
+- PDF 正文：在「设置 → Glossa → 论文正文」配置 **PaddleOCR** 或 **MinerU** 后，手动转换及自动转换按设置将 PDF 上传到所选服务，无需另行授权弹窗。API Key 存于 Zotero 登录管理器的 `markdown.cloud.token` 与 `markdown.mineru.token`。生成的 Markdown 附件及图片随 Zotero 原生附件同步（包括 WebDAV）；会话、术语库与看板仍保留在本地。Glossa 不增加服务器或遥测；取消请求不保证撤销服务端已接受的任务。
 - 没有遥测、没有授权服务器、没有加密模块。
 
 快捷键 `Ctrl+/`（在 PDF 阅读器里也能用）。设置在「编辑 → 设置 → Glossa」，命令标签也在设置页里编辑。

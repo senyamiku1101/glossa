@@ -40,7 +40,7 @@
     "lint:fix": "prettier --write . && eslint . --fix",
     "release": "zotero-plugin release",
     "test": "zotero-plugin test",
-    "check": "node scripts/check-logic.mjs && node scripts/check-sessions.mjs && node scripts/check-pdf-paragraph.mjs && node scripts/check-pdf-layout.mjs && node scripts/check-pdf-layout-edges.mjs && node scripts/check-pdf-multi.mjs && node scripts/check-pdf-reader-access.mjs && node scripts/check-selection-popup.mjs && node scripts/check-glossary-translation.mjs && node scripts/check-board.mjs && node scripts/check-locales.mjs"
+    "check": "node scripts/check-logic.mjs && node scripts/check-sessions.mjs && node scripts/check-pdf-paragraph.mjs && node scripts/check-pdf-layout.mjs && node scripts/check-pdf-layout-edges.mjs && node scripts/check-pdf-multi.mjs && node scripts/check-pdf-reader-access.mjs && node scripts/check-selection-popup.mjs && node scripts/check-glossary-translation.mjs && node scripts/check-board.mjs && node scripts/check-locales.mjs && node scripts/check-markdown-paddle.mjs && node scripts/check-markdown-pipeline.mjs && node scripts/check-markdown-paddle-cloud.mjs && node scripts/check-markdown-mineru.mjs"
   },
   "dependencies": {
     "zotero-plugin-toolkit": "^5.1.0-beta.13"

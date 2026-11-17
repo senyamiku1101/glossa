@@ -358,3 +358,77 @@
     flex-wrap: wrap;
   }
 }
+/* Markdown-only provider cards. */
+[data-panel="markdown"] .glossa-md-card {
+  padding: 16px;
+  margin: 0 0 12px;
+  border: 1px solid var(--material-panedivider, #d8d8d8);
+  border-radius: 10px;
+  background: var(--material-background, Canvas);
+  color: var(--fill-primary, CanvasText);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.glossa-md-card h3 {
+  font-size: 13px;
+  margin: 0 0 2px;
+}
+.glossa-md-setting {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+.glossa-md-provider {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--material-panedivider, #d8d8d8);
+}
+.glossa-md-provider[hidden] {
+  display: none !important;
+}
+.glossa-md-provider > a {
+  align-self: flex-end;
+  color: var(--color-accent, #2879c8);
+  font-size: 12px;
+}
+.glossa-md-setting input,
+.glossa-md-setting select {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+.glossa-md-setting .glossa-field {
+  min-width: 0;
+}
+.glossa-md-advanced {
+  border-top: 1px solid var(--material-panedivider, #d8d8d8);
+  padding-top: 10px;
+}
+.glossa-md-advanced summary {
+  cursor: pointer;
+  color: var(--fill-secondary, GrayText);
+  font-size: 12px;
+}
+.glossa-md-advanced[open] > *:not(summary) {
+  margin-top: 12px;
+}
+.glossa-md-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.glossa-md-actions [role="status"] {
+  margin: 0;
+  flex: 1;
+}
+@media (max-width: 480px) {
+  .glossa-md-setting {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+  }
+}
