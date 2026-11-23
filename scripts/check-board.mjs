@@ -204,6 +204,21 @@ assert.equal(flagged.translationTruncated, true);
 const second = makeBoardEntry(
   boardInput({ id: "id000002", translation: "第二段", mode: "review" }),
 );
+const noteEntry = makeBoardEntry(
+  boardInput({
+    id: "id000009",
+    mode: "note",
+    status: "draft",
+    source: "效率是否较高？",
+    translation: "工程上可接受，三维管道约 1 小时。",
+  }),
+);
+assert.equal(noteEntry.mode, "note");
+assert.equal(
+  parseBoard(serializeBoard([noteEntry]))[0].mode,
+  "note",
+  "note entries round-trip cleanly alongside translations",
+);
 const text = serializeBoard([entry, second]);
 const file = JSON.parse(text);
 assert.equal(file.version, 1);

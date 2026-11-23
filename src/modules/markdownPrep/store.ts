@@ -1,14 +1,16 @@
 /** Native Zotero Markdown attachments; resources are flat for native ZIP sync. */
 import { config } from "../../../package.json";
-import { planHostedBody } from "./assets";
+import { mimeFromFilename, planHostedBody } from "./assets";
 import {
   cacheEntryDirName,
+  cacheEntryPath,
   ensureDirectory,
   findAnyCacheEntry,
   isSafeRelativePath,
   loadCacheEntry,
   loadCacheIndex,
   pathExists,
+  readBytes,
   readText,
   saveCacheIndex,
   upsertCacheIndex,
@@ -22,6 +24,7 @@ import { bodyStagingDir, paths } from "../../utils/paths";
 import {
   BODY_SCHEMA_VERSION,
   CONVERTER_VERSION,
+  type BlockLoc,
   type HostedBodyMeta,
   type HostedBodyPlan,
   type HostedResource,
@@ -286,12 +289,16 @@ async function bodyStillMatches(
     return true;
   }
 }
-function itemFromRelated(
+async function itemFromRelated(
   pdf: Zotero.Item,
   key: string,
-): Zotero.Item | undefined {
+): Promise<Zotero.Item | undefined> {
   try {
-    return Zotero.Items.getByLibraryAndKey(pdf.libraryID, key) || undefined;
+    return (
+      Zotero.Items.getByLibraryAndKey(pdf.libraryID, key) ||
+      (await Zotero.Items.getByLibraryAndKeyAsync(pdf.libraryID, key)) ||
+      undefined
+    );
   } catch {
     return undefined;
   }
@@ -318,10 +325,12 @@ export async function findHostedAttachment(
   };
   if (knownAttachmentKey) {
     try {
-      const known = Zotero.Items.getByLibraryAndKey(
-        pdf.libraryID,
-        knownAttachmentKey,
-      );
+      const known =
+        Zotero.Items.getByLibraryAndKey(pdf.libraryID, knownAttachmentKey) ||
+        (await Zotero.Items.getByLibraryAndKeyAsync(
+          pdf.libraryID,
+          knownAttachmentKey,
+        ));
       if (known) push(known);
     } catch {
       // A stale journal key is ignored; discovery below still runs.
@@ -329,18 +338,26 @@ export async function findHostedAttachment(
   }
   const parent = pdf.parentItem;
   if (parent) {
-    for (const id of parent.getAttachments()) {
+    const childIDs = parent.getAttachments();
+    if (childIDs.length) {
       try {
-        push(Zotero.Items.get(id) || undefined);
+        const children = await Zotero.Items.getAsync(childIDs);
+        for (const child of children) push(child || undefined);
       } catch {
-        // Skip an unreadable child.
+        for (const id of childIDs) {
+          try {
+            push(Zotero.Items.get(id) || undefined);
+          } catch {
+            // Skip an unreadable child.
+          }
+        }
       }
     }
   } else {
     // A file attachment cannot have children; the hosted body is related in
     // the same library instead.
     for (const key of pdf.relatedItems || []) {
-      push(itemFromRelated(pdf, key));
+      push(await itemFromRelated(pdf, key));
     }
   }
   for (const candidate of candidates) {
@@ -377,13 +394,6 @@ export async function readHostedAttachment(
   };
 }
 
-/** Deprecated alias kept for callers that only need the legacy item. */
-export async function getHostedAttachment(
-  pdf: Zotero.Item,
-  knownAttachmentKey?: string,
-): Promise<Zotero.Item | undefined> {
-  return findHostedAttachment(pdf, knownAttachmentKey);
-}
 export type PreparedHostedBody = {
   plan: HostedBodyPlan;
   meta: HostedBodyMeta;
@@ -467,17 +477,6 @@ function bytesHashHex(bytes: Uint8Array): string {
   );
 }
 
-/** Content-addressed token of the resource bytes kept for one body. */
-export function tokenForResources(
-  meta: HostedBodyMeta,
-  resources: { relativePath: string; bytes: Uint8Array }[],
-): string | undefined {
-  const safe = resources.filter((resource) =>
-    isSafeRelativePath(resource.relativePath),
-  );
-  if (!safe.length) return undefined;
-  return hostedAssetToken(meta, safe);
-}
 async function readCachedBody(
   pdf: Zotero.Item,
   fingerprint: SourceFingerprint,
@@ -510,7 +509,6 @@ export async function deleteBodyForPDF(
   await attachment.eraseTx();
   return true;
 }
-export const removeHostedBody = deleteBodyForPDF;
 export type HostedWriteResult =
   | {
       ok: true;
@@ -595,6 +593,109 @@ export async function readBodyForContext(
   }
   return undefined;
 }
+export type PreparedLayout = {
+  /** Clean Markdown text (matches `blocks` offsets when not user-modified). */
+  markdown: string;
+  meta: HostedBodyMeta;
+  blocks: BlockLoc[];
+  fresh: boolean;
+  userModified: boolean;
+  bodyPath?: string;
+  hostedRoot?: string;
+  cacheDir?: string;
+};
+
+const MAX_VISION_ASSET_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Load the fresh Markdown body together with its cached layout map (`blocks.json`)
+ * for PDF reader alignment. Never writes or hits the network.
+ */
+export async function readPreparedLayout(
+  pdf: Zotero.Item,
+  options: {
+    legacyAttachmentKey?: string;
+    fingerprint?: SourceFingerprint;
+    allowCache?: boolean;
+  } = {},
+): Promise<PreparedLayout | undefined> {
+  const body = await readBodyForContext(pdf, options);
+  if (!body || !body.fresh) return undefined;
+  const hostedRoot = body.bodyPath ? paths().parent(body.bodyPath) : undefined;
+  let blocks: BlockLoc[] = [];
+  let cacheDir: string | undefined;
+  let markdown = body.markdown;
+  try {
+    const index = await loadCacheIndex();
+    const entry = findAnyCacheEntry(index, {
+      md5: body.meta.md5,
+      size: body.meta.size,
+      mtime: body.meta.mtime,
+    });
+    if (entry) {
+      const cached = await loadCacheEntry(entry.dir);
+      if (cached && cached.meta.sourceKey === pdf.key) {
+        blocks = cached.blocks;
+        cacheDir = entry.dir;
+        // When the hosted body was not edited by the user, prefer the cached
+        // body whose offsets match `blocks.json` verbatim.
+        if (
+          !body.userModified &&
+          bodySha1(cached.markdown) === cached.meta.bodySha1
+        ) {
+          markdown = cached.markdown;
+        }
+      }
+    }
+  } catch {
+    // Missing or unreadable cache falls back to Markdown-only alignment.
+  }
+  return {
+    markdown,
+    meta: body.meta,
+    blocks,
+    fresh: body.fresh,
+    userModified: body.userModified,
+    bodyPath: body.bodyPath,
+    hostedRoot: hostedRoot || undefined,
+    cacheDir,
+  };
+}
+
+/** Read one figure/table asset referenced by a prepared layout block. */
+export async function readPreparedAsset(
+  layout: Pick<PreparedLayout, "hostedRoot" | "cacheDir">,
+  assetPath: string,
+): Promise<{ bytes: Uint8Array; mime: string } | undefined> {
+  if (!isSafeRelativePath(assetPath)) return undefined;
+  const normalized = assetPath.replace(/\\/g, "/");
+  const segments = normalized.split("/").filter(Boolean);
+  if (!segments.length) return undefined;
+  const candidates: string[] = [];
+  if (layout.hostedRoot && segments.length === 1) {
+    candidates.push(paths().join(layout.hostedRoot, segments[0]));
+  }
+  if (layout.cacheDir) {
+    candidates.push(
+      paths().join(cacheEntryPath(layout.cacheDir), "resources", ...segments),
+    );
+  }
+  if (layout.hostedRoot && segments.length > 1) {
+    candidates.push(paths().join(layout.hostedRoot, ...segments));
+  }
+  for (const path of candidates) {
+    const bytes = await readBytes(path);
+    if (
+      !bytes ||
+      !bytes.byteLength ||
+      bytes.byteLength > MAX_VISION_ASSET_BYTES
+    )
+      continue;
+    return { bytes, mime: mimeFromFilename(normalized) };
+  }
+  return undefined;
+}
+
 export async function getBodyCacheTag(
   pdf: Zotero.Item,
   state?: Pick<PrepState, "updatedAt" | "hostedAttachmentKey">,
@@ -708,23 +809,19 @@ async function commitHosted(
       resources,
     );
     const markdown = applyBundleAssetLinks(plan.markdown, files);
-    meta = { ...meta, bundle: undefined, bodySha1: bodySha1(markdown) };
-    staging = paths().join(
-      bodyStagingDir(),
-      pdf.key + "-" + Date.now() + "-" + Math.random().toString(16).slice(2),
-    );
-    await ensureDirectory(staging);
-    const stagedBody = paths().join(
-      staging,
-      safeMarkdownFilename(pdf.attachmentFilename || ""),
-    );
-    await writeTextAtomic(stagedBody, serializeBodyMeta(meta) + markdown);
-    for (const r of resources)
-      await writeBytesAtomic(
-        paths().join(staging, files.get(r.relativePath)!),
-        r.bytes,
+    meta = { ...meta, bodySha1: bodySha1(markdown) };
+    const serialized = serializeBodyMeta(meta) + markdown;
+    if (!attachment) {
+      staging = paths().join(
+        bodyStagingDir(),
+        pdf.key + "-" + Date.now() + "-" + Math.random().toString(16).slice(2),
       );
-    if (!attachment)
+      await ensureDirectory(staging);
+      const stagedBody = paths().join(
+        staging,
+        safeMarkdownFilename(pdf.attachmentFilename || ""),
+      );
+      await writeTextAtomic(stagedBody, serialized);
       attachment = await Zotero.Attachments.importFromFile({
         file: stagedBody,
         libraryID: pdf.libraryID,
@@ -733,6 +830,7 @@ async function commitHosted(
         title: hostedTitleFor(pdf.attachmentFilename || "paper.pdf"),
         contentType: HOSTED_CONTENT_TYPE,
       });
+    }
     const wantedName = safeMarkdownFilename(pdf.attachmentFilename || "");
     if (attachment.attachmentFilename !== wantedName) {
       const renamed = await attachment.renameAttachmentFile(
@@ -753,7 +851,7 @@ async function commitHosted(
         paths().join(root, files.get(r.relativePath)!),
         r.bytes,
       );
-    await writeTextAtomic(bodyPath, serializeBodyMeta(meta) + markdown);
+    await writeTextAtomic(bodyPath, serialized);
     attachment.setField(
       "title",
       hostedTitleFor(pdf.attachmentFilename || "paper.pdf"),
@@ -807,8 +905,9 @@ export function cleanupLegacyPdfBundlesOnce(): Promise<void> {
     );
     const search = new Zotero.Search();
     search.addCondition("itemType", "is", "attachment");
-    for (const id of await search.search()) {
-      const item = Zotero.Items.get(id);
+    const ids = await search.search();
+    const items = ids.length ? await Zotero.Items.getAsync(ids) : [];
+    for (const item of items) {
       if (!item || !item.isPDFAttachment() || !item.isStoredFileAttachment())
         continue;
       const pdfPath = await item.getFilePathAsync();

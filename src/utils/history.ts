@@ -193,37 +193,18 @@ export function conversationFileName(
     : `g${library.groupID}_${safeKey}.json`;
 }
 
-export function serializeConversation(label: string, turns: Turn[]) {
-  return JSON.stringify(
-    {
-      version: HISTORY_VERSION,
-      label,
-      updatedAt: new Date().toISOString(),
-      turns: turns.map(({ role, content, display, source, translation }) => ({
-        role,
-        content,
-        ...(display === undefined ? {} : { display }),
-        ...(source === undefined ? {} : { source }),
-        ...(translation ? { translation: storedTranslation(translation) } : {}),
-      })),
-    },
-    null,
-    1,
-  );
+function serializeTurns(turns: Turn[]) {
+  return turns.map(({ role, content, display, source, translation }) => ({
+    role,
+    content,
+    ...(display === undefined ? {} : { display }),
+    ...(source === undefined ? {} : { source }),
+    ...(translation ? { translation: storedTranslation(translation) } : {}),
+  }));
 }
 
-/** Stored turns, or undefined if the file is not a conversation. */
-export function parseConversation(raw: string): Turn[] | undefined {
-  let data: any;
-  try {
-    data = JSON.parse(raw);
-  } catch {
-    return undefined;
-  }
-  if (!data || typeof data !== "object" || !Array.isArray(data.turns)) {
-    return undefined;
-  }
-  return data.turns.flatMap((turn: any): Turn[] => {
+function parseTurns(rawTurns: unknown[]): Turn[] {
+  return rawTurns.flatMap((turn: any): Turn[] => {
     if (turn?.role !== "user" && turn?.role !== "assistant") return [];
     if (typeof turn.content !== "string") return [];
     const source =
@@ -246,6 +227,33 @@ export function parseConversation(raw: string): Turn[] | undefined {
       },
     ];
   });
+}
+
+export function serializeConversation(label: string, turns: Turn[]) {
+  return JSON.stringify(
+    {
+      version: HISTORY_VERSION,
+      label,
+      updatedAt: new Date().toISOString(),
+      turns: serializeTurns(turns),
+    },
+    null,
+    1,
+  );
+}
+
+/** Stored turns, or undefined if the file is not a conversation. */
+export function parseConversation(raw: string): Turn[] | undefined {
+  let data: any;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  if (!data || typeof data !== "object" || !Array.isArray(data.turns)) {
+    return undefined;
+  }
+  return parseTurns(data.turns);
 }
 
 /** Version 2 keeps multiple named sessions in the item's existing JSON file. */
@@ -286,8 +294,9 @@ export function parseSessionFile(raw: string): SessionFile | undefined {
     data.version === 1 ||
     (data.version === undefined && Array.isArray(data.turns))
   ) {
-    const turns = parseConversation(raw);
-    if (!turns || turns.length !== data.turns.length) return undefined;
+    if (!Array.isArray(data.turns)) return undefined;
+    const turns = parseTurns(data.turns);
+    if (turns.length !== data.turns.length) return undefined;
     return {
       activeId: "legacy",
       sessions: [
@@ -320,8 +329,8 @@ export function parseSessionFile(raw: string): SessionFile | undefined {
       !Array.isArray(entry.turns)
     )
       return undefined;
-    const turns = parseConversation(JSON.stringify({ turns: entry.turns }));
-    if (!turns || turns.length !== entry.turns.length) return undefined;
+    const turns = parseTurns(entry.turns);
+    if (turns.length !== entry.turns.length) return undefined;
     ids.add(entry.id);
     sessions.push({
       id: entry.id,
@@ -349,7 +358,7 @@ export function serializeSessionFile(label: string, data: SessionFile) {
         createdAt: session.createdAt,
         updatedAt: session.updatedAt,
         // Share the existing rule: reasoning and runtime state never reach disk.
-        turns: JSON.parse(serializeConversation(label, session.turns)).turns,
+        turns: serializeTurns(session.turns),
       })),
     },
     null,

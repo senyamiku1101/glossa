@@ -1,4 +1,5 @@
 import { config } from "../../package.json";
+import type { ContextItemInput } from "../utils/contextTray";
 import { asItem } from "../utils/reader";
 import { ensureStylesheet } from "../utils/stylesheet";
 import { ChatView } from "./chatView";
@@ -112,34 +113,108 @@ export function unregisterSidebar() {
   live.clear();
 }
 
+function pickSection(
+  target: Target,
+  reader?: _ZoteroTypes.ReaderInstance,
+): Section | undefined {
+  const candidates = [...live].filter(
+    (section) => section.view.key === target.key,
+  );
+  if (!candidates.length) return undefined;
+  const tabID = reader?.tabID;
+  if (tabID) {
+    const exact = candidates.find(
+      (entry) =>
+        entry.view.root.closest("item-details")?.id === `${tabID}-context`,
+    );
+    if (exact) return exact;
+  }
+  const inContext = candidates.filter((entry) =>
+    Boolean(entry.view.root.closest("context-pane")),
+  );
+  const pool = inContext.length ? inContext : candidates;
+  return (
+    pool.find((entry) => entry.view.root.getBoundingClientRect().width > 0) ||
+    pool.at(-1)
+  );
+}
+
+/**
+ * Explicitly append a text, figure, table or equation context item to the
+ * matching Glossa chat workbench, switching the right sidebar straight to
+ * Glossa and focusing the composer input.
+ */
+export function addContextToChat(
+  target: Target,
+  item: ContextItemInput,
+  reader?: _ZoteroTypes.ReaderInstance,
+): boolean {
+  revealSidebar(target, reader);
+  const preferred = pickSection(target, reader);
+  if (preferred) {
+    return preferred.view.addContext(item, true);
+  }
+  let added = false;
+  for (const section of live) {
+    if (section.view.key !== target.key) continue;
+    if (section.view.addContext(item, true)) added = true;
+  }
+  return added;
+}
+
 /** Put the selected PDF text into the matching reader sidebar composer. */
 export function offerSelection(
   target: Target,
   selection: string,
   page?: number,
+  focus = false,
+  reader?: _ZoteroTypes.ReaderInstance,
 ) {
+  if (focus) {
+    addContextToChat(target, { kind: "text", text: selection, page }, reader);
+    return;
+  }
   for (const section of live) {
     if (section.view.key !== target.key) continue;
-    // Selecting PDF text updates the quote without moving focus or scrolling.
     section.view.prefillSelection(selection, page, false);
   }
 }
 
 /** An explicit Glossa command opens the matching, visible reader workspace. */
-export function revealSidebar(target: Target) {
-  const candidates = [...live].filter(
-    (section) => section.view.key === target.key,
-  );
-  const section =
-    candidates.find(
-      (entry) => entry.view.root.getBoundingClientRect().width > 0,
-    ) || candidates.at(-1);
+export function revealSidebar(
+  target: Target,
+  reader?: _ZoteroTypes.ReaderInstance,
+) {
+  const section = pickSection(target, reader);
   if (!section) return;
   const pane = section.view.root.closest("context-pane, item-pane") as
     (HTMLElement & { collapsed?: boolean }) | null;
   if (pane) pane.collapsed = false;
   const contextPane = (section.win as any).ZoteroContextPane;
   if (contextPane) contextPane.collapsed = false;
+  // Switch Zotero's native right-hand sidenav strip to Glossa's `G` icon so
+  // clicking "Add to chat" or "Explain" leaves Info/Notes immediately.
+  const host = section.view.root.closest(
+    "item-pane-custom-section",
+  ) as HTMLElement | null;
+  const details = section.view.root.closest("item-details") as
+    (HTMLElement & { sidenav?: Element }) | null;
+  const paneID = host?.dataset?.pane || `${config.addonRef}-chat`;
+  const nav =
+    details?.sidenav || pane?.querySelector?.("item-pane-sidenav") || null;
+  const navBtn = nav?.querySelector?.(`[data-pane="${paneID}"]`) as
+    (HTMLElement & { disabled?: boolean }) | null;
+  if (
+    navBtn &&
+    !navBtn.disabled &&
+    navBtn.getAttribute("disabled") !== "true"
+  ) {
+    try {
+      navBtn.click();
+    } catch {
+      // Fall back to direct viewport activation below.
+    }
+  }
   section.viewport?.activate();
 }
 

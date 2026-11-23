@@ -1,16 +1,16 @@
 import { config } from "../../package.json";
 import { getString } from "../utils/locale";
-import { createBackgroundTasksWidget } from "./markdownUI";
 import { getPref, setPref } from "../utils/prefs";
-import { boardDedupeKey } from "../utils/board";
-import { templateKeys } from "../utils/text";
+import { boardDedupeKey, type BoardMode } from "../utils/board";
 import {
-  CONTEXT_MODES,
-  renderQuestion,
-  renderTemplate,
-  type ContextMode,
-  type Target,
-} from "./context";
+  addContextItem,
+  removeContextItem,
+  summarizeContextItems,
+  type ContextItem,
+  type ContextItemInput,
+  type ContextItemKind,
+} from "../utils/contextTray";
+import { renderQuestion, type ContextMode, type Target } from "./context";
 import { conversations, type StoreEvent } from "./conversations";
 import type { Turn } from "../utils/history";
 import { board, type BoardAddInput } from "./board";
@@ -21,11 +21,9 @@ import {
 } from "./boardUI";
 import { openGlossaryManager } from "./glossaryUI";
 import { renderMarkdown } from "./markdown";
-import { getPDFSelection } from "./pdf";
 import { runner } from "./runner";
 import { saveSessionNote } from "./notes";
 import { applyProfile, getProfiles, matchingProfileId } from "./settings";
-import { getTags, TRANSLATE_TEMPLATE, type CommandTag } from "./tags";
 
 export type ChatViewOptions = {
   /** Show "Glossa" in the header; the item pane section has its own. */
@@ -51,7 +49,6 @@ export function initChatViews() {
       ),
     );
   };
-  watch("tags", (view) => view.renderTags());
   watch("chat.contextMode", (view) => view.renderMode());
   for (const key of ["profiles", "profiles.active", "api.model", "api.url"]) {
     watch(key, (view) => view.renderProfiles());
@@ -65,21 +62,20 @@ export function disposeChatViews() {
 }
 
 type PendingElements = {
-  reasoning: HTMLDetailsElement;
-  summary: HTMLElement;
+  reasoningBtn: HTMLButtonElement;
+  reasoningPane: HTMLDivElement;
   reasoningBody: HTMLElement;
   answer: HTMLElement;
 };
 
 /**
- * The chat UI for one conversation: header, transcript, tags, composer.
+ * The chat UI for one conversation: header, transcript + sticky board, composer.
  * It keeps no conversation state of its own; every render reads the store,
  * so a view created mid-answer catches up on its first render.
  */
 export class ChatView {
   readonly root: HTMLDivElement;
   private target?: Target;
-  private backgroundTasks?: ReturnType<typeof createBackgroundTasksWidget>;
   private unsubscribe: () => void;
   private readonly boardPanel?: BoardPanel;
   private unsubscribeBoard: () => void;
@@ -88,13 +84,11 @@ export class ChatView {
   private frame = 0;
   private fullRenderQueued = false;
   private pendingEls?: PendingElements;
-  private quoted = "";
-  private quotedPage?: number;
+  private contextItems: ContextItem[] = [];
+  private expandedContextId?: string;
+  private attachPaperWithContext = false;
   private shownSession = "";
-  private drafts = new Map<
-    string,
-    { text: string; quote: string; page?: number }
-  >();
+  private drafts = new Map<string, { text: string; items: ContextItem[] }>();
   private savingNote = false;
   private editingSessionId?: string;
 
@@ -104,17 +98,22 @@ export class ChatView {
     private readonly options: ChatViewOptions = {},
   ) {
     this.root = this.build(container);
-    this.backgroundTasks = createBackgroundTasksWidget(this.win);
-    this.root
-      .querySelector(".glossa-header")
-      ?.append(this.backgroundTasks.root);
-    // The board strip belongs to the item-pane workspace; the floating chat
-    // still shows "add to board" on cards but does not mount a second panel.
+    // Sticky-note board floats pinned at the top edge of the conversation stage.
     if (this.options.board) {
       this.boardPanel = createBoardPanel(this.win, {
         onJump: (itemKey) => void this.jumpToItem(itemKey),
+        onAddToChat: (entry) => {
+          this.addContext(
+            {
+              kind: "text",
+              text: entry.translation,
+              label: getString("board-note-badge"),
+            },
+            true,
+          );
+        },
       });
-      this.root.prepend(this.boardPanel.root);
+      this.root.querySelector(".glossa-stage")?.prepend(this.boardPanel.root);
     }
     this.unsubscribe = conversations.subscribe((event) =>
       this.onStoreEvent(event),
@@ -122,7 +121,6 @@ export class ChatView {
     // Only button labels change on board events; the transcript is untouched.
     this.unsubscribeBoard = board.subscribe(() => this.refreshBoardButtons());
     views.add(this);
-    this.renderTags();
     this.renderProfiles();
     this.renderMode();
     this.renderAll(true);
@@ -138,7 +136,6 @@ export class ChatView {
     this.unsubscribe();
     this.unsubscribeBoard();
     this.boardPanel?.dispose();
-    this.backgroundTasks?.dispose();
     views.delete(this);
     if (this.frame) this.win.cancelAnimationFrame(this.frame);
     this.frame = 0;
@@ -164,14 +161,25 @@ export class ChatView {
     this.input.focus({ preventScroll: true });
   }
 
-  /** Keep the PDF selection after the popup closes and show it as a quote. */
+  /**
+   * Append a text, figure, table or equation context item to the composer's
+   * multi-context workbench (deduplicated) and optionally focus the input.
+   */
+  addContext(item: ContextItemInput, focus = true): boolean {
+    const res = addContextItem(this.contextItems, item);
+    if (res.added) {
+      this.contextItems = res.items;
+      this.syncContextTray();
+    }
+    if (focus) this.input.focus({ preventScroll: true });
+    return res.added || res.duplicate;
+  }
+
+  /** Legacy helper: add a plain text selection to the context workbench. */
   prefillSelection(text: string, page?: number, focus = true) {
     const quoted = text.replace(/\s+/g, " ").trim();
     if (!quoted) return;
-    this.quoted = quoted;
-    this.quotedPage = page && page > 0 ? page : undefined;
-    this.syncQuote();
-    if (focus) this.input.focus({ preventScroll: true });
+    this.addContext({ kind: "text", text: quoted, page }, focus);
   }
 
   // ---- DOM
@@ -180,34 +188,229 @@ export class ChatView {
     return this.root.querySelector("textarea") as HTMLTextAreaElement;
   }
 
-  private get quote() {
-    return this.root.querySelector(".glossa-quote") as HTMLElement;
+  private get contextTray() {
+    return this.root.querySelector(".glossa-context-tray") as HTMLElement;
   }
 
-  private get quoteMeta() {
-    return this.root.querySelector(".glossa-quote-meta") as HTMLElement;
+  private contextKindLabels(): Record<ContextItemKind, string> {
+    return {
+      text: getString("context-kind-text"),
+      figure: getString("context-kind-figure"),
+      table: getString("context-kind-table"),
+      equation: getString("context-kind-equation"),
+    };
   }
 
-  private get quotePreview() {
-    return this.root.querySelector(".glossa-quote-preview") as HTMLElement;
+  private syncContextToggle() {
+    const toggle = this.root.querySelector<HTMLButtonElement>(
+      ".glossa-paper-toggle",
+    );
+    const hasItems = this.contextItems.length > 0;
+    if (hasItems) {
+      this.input.placeholder = getString("context-placeholder");
+      if (toggle) {
+        toggle.textContent = getString("context-attach-paper");
+        toggle.title = getString("context-attach-paper-tip");
+        toggle.setAttribute(
+          "aria-pressed",
+          String(this.attachPaperWithContext),
+        );
+        toggle.classList.toggle(
+          "glossa-toggle-active",
+          this.attachPaperWithContext,
+        );
+      }
+      return;
+    }
+    const usePaper = usePaperContext();
+    this.input.placeholder = getString(
+      usePaper ? "composer-placeholder-paper" : "composer-placeholder-chat",
+    );
+    if (toggle) {
+      toggle.textContent = getString("context-use-paper");
+      toggle.title = getString("context-use-paper-tip");
+      toggle.setAttribute("aria-pressed", String(usePaper));
+      toggle.classList.toggle("glossa-toggle-active", usePaper);
+    }
   }
 
-  private syncQuote() {
-    const quote = this.quote;
-    if (!quote) return;
-    const has = Boolean(this.quoted);
-    quote.hidden = !has;
-    const words = wordCount(this.quoted);
-    this.quoteMeta.textContent = this.quotedPage
-      ? getString("quote-meta", {
-          args: { page: this.quotedPage, words },
-        })
-      : getString("quote-meta-nopage", { args: { words } });
-    this.quotePreview.textContent = this.quoted;
-    this.quotePreview.title = this.quoted;
-    this.input.placeholder = getString("ask-placeholder", {
-      args: { mode: getString(`mode-${contextMode()}`) },
-    });
+  private togglePaperContext() {
+    if (this.contextItems.length > 0) {
+      this.attachPaperWithContext = !this.attachPaperWithContext;
+      this.syncContextToggle();
+      return;
+    }
+    setPref("chat.contextMode", usePaperContext() ? "chat" : "related");
+    this.syncContextToggle();
+  }
+
+  private syncContextTray() {
+    const tray = this.contextTray;
+    if (!tray) return;
+    const count = this.contextItems.length;
+    tray.hidden = count === 0;
+    this.input.classList.remove("glossa-needs-input");
+    if (!count) {
+      this.expandedContextId = undefined;
+      this.attachPaperWithContext = false;
+      this.syncContextToggle();
+      return;
+    }
+    this.syncContextToggle();
+    const titleEl = tray.querySelector(".glossa-ctx-title") as HTMLElement;
+    const clearBtn = tray.querySelector(
+      ".glossa-ctx-clear",
+    ) as HTMLButtonElement;
+    const listEl = tray.querySelector(".glossa-ctx-list") as HTMLElement;
+    titleEl.textContent = getString("context-tray-title", { args: { count } });
+    clearBtn.hidden = count < 2;
+
+    const doc = this.win.document;
+    const kindLabels = this.contextKindLabels();
+    const frag = doc.createDocumentFragment();
+    for (const item of this.contextItems) {
+      const expanded = this.expandedContextId === item.id;
+      const card = doc.createElementNS(
+        "http://www.w3.org/1999/xhtml",
+        "div",
+      ) as HTMLDivElement;
+      card.className = expanded
+        ? "glossa-ctx-item glossa-ctx-expanded"
+        : "glossa-ctx-item";
+
+      const row = doc.createElementNS(
+        "http://www.w3.org/1999/xhtml",
+        "div",
+      ) as HTMLDivElement;
+      row.className = "glossa-ctx-row";
+
+      if (item.image) {
+        const img = doc.createElementNS(
+          "http://www.w3.org/1999/xhtml",
+          "img",
+        ) as HTMLImageElement;
+        img.className = "glossa-ctx-thumb";
+        img.src = `data:${item.image.mimeType};base64,${item.image.data}`;
+        img.alt = item.caption || kindLabels[item.kind];
+        row.append(img);
+      } else {
+        const icon = doc.createElementNS(
+          "http://www.w3.org/1999/xhtml",
+          "span",
+        ) as HTMLSpanElement;
+        icon.className = `glossa-ctx-icon glossa-ctx-icon-${item.kind}`;
+        icon.textContent =
+          item.kind === "equation"
+            ? "∑"
+            : item.kind === "table"
+              ? "⊞"
+              : item.kind === "figure"
+                ? "◫"
+                : "¶";
+        row.append(icon);
+      }
+
+      const main = doc.createElementNS(
+        "http://www.w3.org/1999/xhtml",
+        "div",
+      ) as HTMLDivElement;
+      main.className = "glossa-ctx-main";
+
+      const meta = doc.createElementNS(
+        "http://www.w3.org/1999/xhtml",
+        "div",
+      ) as HTMLDivElement;
+      meta.className = "glossa-ctx-meta";
+      const metaParts = [item.label || kindLabels[item.kind]];
+      if (item.page) {
+        metaParts.push(
+          getString("context-page-label", { args: { page: item.page } }),
+        );
+      }
+      if (item.kind === "text" && item.text) {
+        metaParts.push(
+          getString("context-words", { args: { words: wordCount(item.text) } }),
+        );
+      }
+      meta.textContent = metaParts.join(" · ");
+
+      const preview = doc.createElementNS(
+        "http://www.w3.org/1999/xhtml",
+        "div",
+      ) as HTMLDivElement;
+      preview.className = "glossa-ctx-preview";
+      const snippet = (
+        item.caption ||
+        item.text ||
+        item.comment ||
+        getString("context-preview-empty")
+      )
+        .replace(/\s+/g, " ")
+        .trim();
+      preview.textContent = snippet;
+      preview.title = snippet;
+      main.append(meta, preview);
+
+      const removeBtn = doc.createElementNS(
+        "http://www.w3.org/1999/xhtml",
+        "button",
+      ) as HTMLButtonElement;
+      removeBtn.type = "button";
+      removeBtn.className = "glossa-ctx-remove";
+      removeBtn.textContent = "×";
+      removeBtn.title = getString("context-item-remove");
+      removeBtn.setAttribute("aria-label", getString("context-item-remove"));
+      removeBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        this.contextItems = removeContextItem(this.contextItems, item.id);
+        if (this.expandedContextId === item.id) {
+          this.expandedContextId = undefined;
+        }
+        this.syncContextTray();
+        this.input.focus({ preventScroll: true });
+      });
+
+      row.addEventListener("click", () => {
+        this.expandedContextId = expanded ? undefined : item.id;
+        this.syncContextTray();
+      });
+      row.append(main, removeBtn);
+      card.append(row);
+
+      if (expanded) {
+        const detail = doc.createElementNS(
+          "http://www.w3.org/1999/xhtml",
+          "div",
+        ) as HTMLDivElement;
+        detail.className = "glossa-ctx-detail";
+        if (item.image) {
+          const big = doc.createElementNS(
+            "http://www.w3.org/1999/xhtml",
+            "img",
+          ) as HTMLImageElement;
+          big.className = "glossa-ctx-detail-img";
+          big.src = `data:${item.image.mimeType};base64,${item.image.data}`;
+          big.alt = item.caption || kindLabels[item.kind];
+          detail.append(big);
+        }
+        const detailText = [item.caption, item.text, item.comment]
+          .filter(Boolean)
+          .join("\n\n");
+        if (detailText) {
+          const body = doc.createElementNS(
+            "http://www.w3.org/1999/xhtml",
+            "div",
+          ) as HTMLDivElement;
+          body.className = "glossa-ctx-detail-text";
+          renderMarkdown(body, detailText);
+          detail.append(body);
+        }
+        card.append(detail);
+      }
+
+      frag.append(card);
+    }
+    listEl.replaceChildren(frag);
   }
 
   private get transcript() {
@@ -505,8 +708,18 @@ export class ChatView {
               },
             ],
           },
-          { tag: "div", namespace: html, classList: ["glossa-transcript"] },
-          { tag: "div", namespace: html, classList: ["glossa-tags"] },
+          {
+            tag: "div",
+            namespace: html,
+            classList: ["glossa-stage"],
+            children: [
+              {
+                tag: "div",
+                namespace: html,
+                classList: ["glossa-transcript"],
+              },
+            ],
+          },
           {
             tag: "div",
             namespace: html,
@@ -515,52 +728,46 @@ export class ChatView {
               {
                 tag: "div",
                 namespace: html,
-                classList: ["glossa-quote"],
+                classList: ["glossa-context-tray"],
                 attributes: { hidden: "true" },
                 children: [
                   {
                     tag: "div",
                     namespace: html,
-                    classList: ["glossa-quote-icon"],
-                    properties: { innerHTML: QUOTE_ICON },
+                    classList: ["glossa-ctx-header"],
+                    children: [
+                      {
+                        tag: "span",
+                        namespace: html,
+                        classList: ["glossa-ctx-title"],
+                      },
+                      {
+                        tag: "button",
+                        namespace: html,
+                        classList: ["glossa-ctx-clear"],
+                        attributes: { type: "button", hidden: "true" },
+                        properties: {
+                          textContent: getString("context-tray-clear"),
+                        },
+                        listeners: [
+                          {
+                            type: "click",
+                            listener: () => {
+                              this.contextItems = [];
+                              this.expandedContextId = undefined;
+                              this.attachPaperWithContext = false;
+                              this.syncContextTray();
+                              this.input.focus({ preventScroll: true });
+                            },
+                          },
+                        ],
+                      },
+                    ],
                   },
                   {
                     tag: "div",
                     namespace: html,
-                    classList: ["glossa-quote-main"],
-                    children: [
-                      {
-                        tag: "div",
-                        namespace: html,
-                        classList: ["glossa-quote-meta"],
-                      },
-                      {
-                        tag: "div",
-                        namespace: html,
-                        classList: ["glossa-quote-preview"],
-                      },
-                    ],
-                  },
-                  {
-                    tag: "button",
-                    namespace: html,
-                    classList: ["glossa-quote-clear"],
-                    attributes: {
-                      type: "button",
-                      title: getString("quote-clear"),
-                    },
-                    properties: { textContent: "×" },
-                    listeners: [
-                      {
-                        type: "click",
-                        listener: () => {
-                          this.quoted = "";
-                          this.quotedPage = undefined;
-                          this.syncQuote();
-                          this.input.focus({ preventScroll: true });
-                        },
-                      },
-                    ],
+                    classList: ["glossa-ctx-list"],
                   },
                 ],
               },
@@ -569,9 +776,7 @@ export class ChatView {
                 namespace: html,
                 attributes: {
                   rows: "2",
-                  placeholder: getString("ask-placeholder", {
-                    args: { mode: getString("mode-related") },
-                  }),
+                  placeholder: getString("composer-placeholder-paper"),
                 },
                 listeners: [
                   {
@@ -590,6 +795,14 @@ export class ChatView {
                     },
                   },
                   { type: "focus", listener: () => this.refreshTarget() },
+                  {
+                    type: "input",
+                    listener: () => {
+                      if (this.input.classList.contains("glossa-needs-input")) {
+                        this.syncContextTray();
+                      }
+                    },
+                  },
                 ],
               },
               {
@@ -598,28 +811,17 @@ export class ChatView {
                 classList: ["glossa-composer-bar"],
                 children: [
                   {
-                    tag: "select",
+                    tag: "button",
                     namespace: html,
-                    classList: ["glossa-mode-select"],
-                    attributes: { title: getString("mode-title") },
-                    children: CONTEXT_MODES.map((mode) => ({
-                      tag: "option",
-                      namespace: html,
-                      properties: {
-                        value: mode,
-                        textContent: getString(`mode-${mode}`),
-                      },
-                    })),
+                    classList: ["glossa-paper-toggle"],
+                    attributes: {
+                      type: "button",
+                      "aria-pressed": "false",
+                    },
                     listeners: [
                       {
-                        type: "change",
-                        listener: (ev: Event) => {
-                          setPref(
-                            "chat.contextMode",
-                            (ev.target as HTMLSelectElement).value,
-                          );
-                          this.syncQuote();
-                        },
+                        type: "click",
+                        listener: () => this.togglePaperContext(),
                       },
                     ],
                   },
@@ -672,9 +874,10 @@ export class ChatView {
       conversations.busyKey === this.key &&
       conversations.busySessionId === conversations.active(this.key!).id
     ) {
-      this.quoted = "";
-      this.quotedPage = undefined;
-      this.syncQuote();
+      this.contextItems = [];
+      this.expandedContextId = undefined;
+      this.attachPaperWithContext = false;
+      this.syncContextTray();
     }
     if (event.kind !== "busy") this.schedule(event.kind !== "delta");
   }
@@ -731,23 +934,18 @@ export class ChatView {
       const text = turn.display ?? turn.content;
       if (turn.role === "user") {
         appendBubble(out, "user", text);
-        if (turn.source) this.sourceBlock(out, turn.source);
         return;
       }
-      if (turn.reasoning) {
-        this.reasoningBlock(out, getString("reasoning")).body.textContent =
-          turn.reasoning;
-      }
-      const assistant = this.answerBlock(out);
-      renderMarkdown(assistant, text);
-      if (turn.translation && assistant.parentElement) {
-        this.translationMeta(
-          assistant.parentElement,
-          turn,
-          convo.id,
-          turnIndex,
-        );
-      }
+      const prevUser =
+        turnIndex > 0 && convo.turns[turnIndex - 1]?.role === "user"
+          ? convo.turns[turnIndex - 1]
+          : undefined;
+      const { card, body } = this.answerBlock(out, {
+        reasoning: turn.reasoning,
+        source: prevUser?.source,
+      });
+      renderMarkdown(body, text);
+      this.cardFooter(card, turn, prevUser, convo.id, turnIndex);
     });
     if (convo.failed) {
       // Not in the history: shown struck through, with the reason.
@@ -758,12 +956,12 @@ export class ChatView {
     }
     if (convo.pending) {
       appendBubble(out, "user", convo.pending.display);
-      const block = this.reasoningBlock(out, getString("reasoning-live"));
+      const pendingCard = this.answerBlock(out, { livePending: true });
       this.pendingEls = {
-        reasoning: block.details,
-        summary: block.summary,
-        reasoningBody: block.body,
-        answer: this.answerBlock(out),
+        reasoningBtn: pendingCard.liveReasoningBtn!,
+        reasoningPane: pendingCard.liveReasoningPane!,
+        reasoningBody: pendingCard.liveReasoningBody!,
+        answer: pendingCard.body,
       };
       this.renderPending();
     }
@@ -780,21 +978,32 @@ export class ChatView {
     const out = this.transcript;
     const follow = isNearEnd(out);
     const stage = pending.stage;
-    // The stage label lives in the summary, so keep the row visible for a
-    // stage even when the model produces no reasoning of its own.
-    els.reasoning.hidden = !pending.reasoning && !stage;
-    els.summary.textContent =
+    const hasReasoning = Boolean(pending.reasoning);
+    els.reasoningBtn.hidden = !hasReasoning && !stage;
+    els.reasoningBtn.textContent =
       stage === "reviewing"
         ? getString("translation-phase-review")
         : stage === "translating"
           ? getString("translation-phase-draft")
-          : getString(pending.text ? "reasoning" : "reasoning-live");
+          : getString(
+              pending.text ? "card-toggle-reasoning" : "reasoning-live",
+            );
+    els.reasoningBtn.disabled = !hasReasoning;
     els.reasoningBody.textContent = pending.reasoning;
+    if (!hasReasoning) els.reasoningPane.hidden = true;
     renderMarkdown(els.answer, pending.text || getString("thinking"));
     if (follow) out.scrollTop = out.scrollHeight;
   }
 
-  private answerBlock(host: Element) {
+  private answerBlock(
+    host: Element,
+    inspector: {
+      reasoning?: string;
+      source?: { text: string; truncated: boolean };
+      livePending?: boolean;
+    } = {},
+  ) {
+    const doc = this.win.document;
     const card = ztoolkit.UI.appendElement(
       {
         tag: "div",
@@ -813,28 +1022,35 @@ export class ChatView {
                 properties: { textContent: getString("note-label") },
               },
               {
-                tag: "button",
+                tag: "div",
                 namespace: "html",
-                classList: ["glossa-icon-button", "glossa-copy-answer"],
-                attributes: {
-                  type: "button",
-                  title: getString("copy"),
-                  "aria-label": getString("copy"),
-                },
-                properties: { innerHTML: COPY_ICON },
-                listeners: [
+                classList: ["glossa-answer-tools"],
+                children: [
                   {
-                    type: "click",
-                    listener: (ev: Event) => {
-                      const btn = ev.currentTarget as HTMLElement;
-                      const body = btn
-                        .closest(".glossa-answer-card")
-                        ?.querySelector(
-                          ".glossa-assistant",
-                        ) as HTMLElement | null;
-                      this.copyText(body ? extractText(body) : "");
-                      this.flashCopied(btn);
+                    tag: "button",
+                    namespace: "html",
+                    classList: ["glossa-icon-button", "glossa-copy-answer"],
+                    attributes: {
+                      type: "button",
+                      title: getString("copy"),
+                      "aria-label": getString("copy"),
                     },
+                    properties: { innerHTML: COPY_ICON },
+                    listeners: [
+                      {
+                        type: "click",
+                        listener: (ev: Event) => {
+                          const btn = ev.currentTarget as HTMLElement;
+                          const body = btn
+                            .closest(".glossa-answer-card")
+                            ?.querySelector(
+                              ".glossa-assistant",
+                            ) as HTMLElement | null;
+                          this.copyText(body ? extractText(body) : "");
+                          this.flashCopied(btn);
+                        },
+                      },
+                    ],
                   },
                 ],
               },
@@ -849,88 +1065,142 @@ export class ChatView {
       },
       host,
     ) as HTMLElement;
-    return card.querySelector(".glossa-assistant") as HTMLElement;
-  }
 
-  private sourceBlock(
-    host: Element,
-    source: { text: string; truncated: boolean },
-  ) {
-    ztoolkit.UI.appendElement(
-      {
-        tag: "details",
-        namespace: "html",
-        classList: ["glossa-source-block"],
-        children: [
-          {
-            tag: "summary",
-            namespace: "html",
-            properties: { textContent: getString("source-trace") },
-          },
-          {
-            tag: "p",
-            namespace: "html",
-            classList: ["glossa-source-help"],
-            properties: {
-              textContent: getString(
-                source.truncated ? "source-truncated" : "source-description",
-              ),
-            },
-          },
-          {
-            tag: "pre",
-            namespace: "html",
-            properties: { textContent: source.text },
-          },
-        ],
-      },
-      host,
-    );
-  }
+    const tools = card.querySelector(".glossa-answer-tools") as HTMLElement;
+    const copyBtn = tools.querySelector(".glossa-copy-answer") as HTMLElement;
+    const body = card.querySelector(".glossa-assistant") as HTMLElement;
 
-  private reasoningBlock(host: Element, summary: string) {
-    const details = ztoolkit.UI.appendElement(
-      {
-        tag: "details",
-        namespace: "html",
-        classList: ["glossa-reasoning"],
-        children: [
-          {
-            tag: "summary",
-            namespace: "html",
-            properties: { textContent: summary },
-          },
-          {
-            tag: "div",
-            namespace: "html",
-            classList: ["glossa-reasoning-body"],
-          },
-        ],
-      },
-      host,
-    ) as HTMLDetailsElement;
+    const makeToggle = (label: string, title: string) => {
+      const btn = doc.createElementNS(
+        "http://www.w3.org/1999/xhtml",
+        "button",
+      ) as HTMLButtonElement;
+      btn.type = "button";
+      btn.className = "glossa-meta-toggle";
+      btn.textContent = label;
+      btn.title = title;
+      btn.setAttribute("aria-expanded", "false");
+      return btn;
+    };
+
+    const makePane = (cls: string) => {
+      const pane = doc.createElementNS(
+        "http://www.w3.org/1999/xhtml",
+        "div",
+      ) as HTMLDivElement;
+      pane.className = `glossa-inline-inspector ${cls}`;
+      pane.hidden = true;
+      return pane;
+    };
+
+    const panes: Array<{ btn: HTMLButtonElement; pane: HTMLDivElement }> = [];
+    const wireToggle = (btn: HTMLButtonElement, pane: HTMLDivElement) => {
+      const entry = { btn, pane };
+      panes.push(entry);
+      btn.addEventListener("click", () => {
+        const opening = pane.hidden;
+        for (const other of panes) {
+          other.pane.hidden = true;
+          other.btn.setAttribute("aria-expanded", "false");
+          other.btn.classList.remove("glossa-meta-active");
+        }
+        if (opening) {
+          pane.hidden = false;
+          btn.setAttribute("aria-expanded", "true");
+          btn.classList.add("glossa-meta-active");
+        }
+      });
+    };
+
+    let liveReasoningBtn: HTMLButtonElement | undefined;
+    let liveReasoningPane: HTMLDivElement | undefined;
+    let liveReasoningBody: HTMLElement | undefined;
+
+    if (inspector.livePending) {
+      liveReasoningBtn = makeToggle(
+        getString("reasoning-live"),
+        getString("reasoning"),
+      );
+      liveReasoningBtn.hidden = true;
+      liveReasoningPane = makePane("glossa-inspector-reasoning");
+      liveReasoningBody = doc.createElementNS(
+        "http://www.w3.org/1999/xhtml",
+        "div",
+      ) as HTMLDivElement;
+      liveReasoningBody.className = "glossa-reasoning-body";
+      liveReasoningPane.append(liveReasoningBody);
+      tools.insertBefore(liveReasoningBtn, copyBtn);
+      card.insertBefore(liveReasoningPane, body);
+      wireToggle(liveReasoningBtn, liveReasoningPane);
+    } else {
+      if (inspector.reasoning) {
+        const btn = makeToggle(
+          getString("card-toggle-reasoning"),
+          getString("reasoning"),
+        );
+        const pane = makePane("glossa-inspector-reasoning");
+        const content = doc.createElementNS(
+          "http://www.w3.org/1999/xhtml",
+          "div",
+        ) as HTMLDivElement;
+        content.className = "glossa-reasoning-body";
+        content.textContent = inspector.reasoning;
+        pane.append(content);
+        tools.insertBefore(btn, copyBtn);
+        card.insertBefore(pane, body);
+        wireToggle(btn, pane);
+      }
+      if (inspector.source) {
+        const btn = makeToggle(
+          getString("card-toggle-context"),
+          getString("source-trace"),
+        );
+        const pane = makePane("glossa-inspector-source");
+        const help = doc.createElementNS(
+          "http://www.w3.org/1999/xhtml",
+          "p",
+        ) as HTMLParagraphElement;
+        help.className = "glossa-source-help";
+        help.textContent = getString(
+          inspector.source.truncated
+            ? "source-truncated"
+            : "source-description",
+        );
+        const pre = doc.createElementNS(
+          "http://www.w3.org/1999/xhtml",
+          "pre",
+        ) as HTMLPreElement;
+        pre.textContent = inspector.source.text;
+        pane.append(help, pre);
+        tools.insertBefore(btn, copyBtn);
+        card.insertBefore(pane, body);
+        wireToggle(btn, pane);
+      }
+    }
+
     return {
-      details,
-      summary: details.querySelector("summary") as HTMLElement,
-      body: details.querySelector(".glossa-reasoning-body") as HTMLElement,
+      card,
+      body,
+      liveReasoningBtn,
+      liveReasoningPane,
+      liveReasoningBody,
     };
   }
 
   /**
-   * Status, models, draft and the review action under a translation answer.
-   * `info` is the local translation metadata; the rendered body above it is
-   * the latest result (the reviewed text when one exists).
+   * Unified action bar under every committed answer card: supports Pin to Board
+   * and Delete for all Q&A notes as well as legacy translation metadata/review.
    */
-  private translationMeta(
+  private cardFooter(
     card: Element,
     turn: Turn,
+    prevUser: Turn | undefined,
     sessionId: string,
     turnIndex: number,
   ) {
     const info = turn.translation;
-    if (!info) return;
-    const statusKey =
-      info.status === "reviewed"
+    const statusKey = info
+      ? info.status === "reviewed"
         ? "translation-status-reviewed"
         : info.status === "review-failed"
           ? "translation-status-review-failed"
@@ -942,47 +1212,54 @@ export class ChatView {
                 ? "translation-status-quick"
                 : info.mode === "review"
                   ? "translation-review-title"
-                  : "selection-collaborative";
-    // Core reviews any turn that still has its complete source; an
-    // incomplete one is the only committed status that cannot be reviewed.
+                  : "selection-collaborative"
+      : undefined;
     const reviewable = Boolean(
+      info &&
       info.source &&
       !info.sourceTruncated &&
       info.status !== "incomplete" &&
       turn.content.trim(),
     );
-    // New buttons are created after renderBusy ran for this pass, so the
-    // busy/storage gates must be applied here too, not only in renderBusy.
     const key = this.key;
     const bucket = key ? conversations.get(key) : undefined;
     const actionDisabled =
       runner.busy || !bucket || !bucket.loaded || !!bucket.storageError;
-    // Only a committed translation with text can be collected; an incomplete
-    // one has no final text. The key follows the final body, so a reviewed
-    // translation gets its own entry.
     const itemKey = this.key;
-    const boardKey =
-      itemKey && info.status !== "incomplete" && turn.content.trim()
-        ? boardDedupeKey({
-            itemKey,
-            mode: info.mode,
-            translation: turn.content,
-          })
-        : "";
+    const boardMode: BoardMode = info ? info.mode : "note";
+    const canBoard = Boolean(
+      itemKey && turn.content.trim() && info?.status !== "incomplete",
+    );
+    const boardKey = canBoard
+      ? boardDedupeKey({
+          itemKey: itemKey!,
+          mode: boardMode,
+          translation: turn.content,
+        })
+      : "";
     const boardAdded = boardKey ? board.has(boardKey) : false;
+    const noteSource =
+      info?.source ?? (prevUser?.display || prevUser?.content || "");
     const host = ztoolkit.UI.appendElement(
       {
         tag: "div",
         namespace: "html",
-        classList: ["glossa-translation-meta"],
+        classList: ["glossa-translation-meta", "glossa-card-footer"],
         children: [
-          {
-            tag: "span",
-            namespace: "html",
-            classList: ["glossa-translation-chip", `glossa-tl-${info.status}`],
-            properties: { textContent: getString(statusKey) },
-          },
-          ...(info.translator
+          ...(info && statusKey
+            ? [
+                {
+                  tag: "span",
+                  namespace: "html" as const,
+                  classList: [
+                    "glossa-translation-chip",
+                    `glossa-tl-${info.status}`,
+                  ],
+                  properties: { textContent: getString(statusKey) },
+                },
+              ]
+            : []),
+          ...(info?.translator
             ? [
                 {
                   tag: "span",
@@ -997,7 +1274,7 @@ export class ChatView {
                 },
               ]
             : []),
-          ...(info.reviewer
+          ...(info?.reviewer
             ? [
                 {
                   tag: "span",
@@ -1036,20 +1313,26 @@ export class ChatView {
                           {
                             itemKey: itemKey!,
                             itemTitle: this.target?.label || "",
-                            translation: {
-                              mode: info.mode,
-                              status: info.status,
-                              source: info.source,
-                              ...(info.sourceTruncated
-                                ? { sourceTruncated: true }
-                                : {}),
-                              ...(info.translator
-                                ? { translator: info.translator }
-                                : {}),
-                              ...(info.reviewer
-                                ? { reviewer: info.reviewer }
-                                : {}),
-                            },
+                            translation: info
+                              ? {
+                                  mode: info.mode,
+                                  status: info.status,
+                                  source: info.source,
+                                  ...(info.sourceTruncated
+                                    ? { sourceTruncated: true }
+                                    : {}),
+                                  ...(info.translator
+                                    ? { translator: info.translator }
+                                    : {}),
+                                  ...(info.reviewer
+                                    ? { reviewer: info.reviewer }
+                                    : {}),
+                                }
+                              : {
+                                  mode: "note",
+                                  status: "draft",
+                                  source: noteSource,
+                                },
                             text: turn.content,
                           },
                         ),
@@ -1061,19 +1344,19 @@ export class ChatView {
           {
             tag: "button",
             namespace: "html" as const,
-            classList: ["glossa-translation-delete"],
+            classList: ["glossa-translation-delete", "glossa-card-delete"],
             attributes: {
               type: "button",
-              title: getString("translation-delete"),
+              title: getString("card-delete"),
             },
             properties: {
-              textContent: getString("translation-delete"),
+              textContent: getString("card-delete"),
               disabled: actionDisabled,
             },
             listeners: [
               {
                 type: "click",
-                listener: () => this.deleteTranslation(sessionId, turnIndex),
+                listener: () => this.deleteExchange(sessionId, turnIndex),
               },
             ],
           },
@@ -1109,14 +1392,11 @@ export class ChatView {
       },
       card,
     ) as HTMLElement;
-    // The dedupe key ends up in a Set inside the store; keep it off the DOM
-    // attribute so control characters in it are never an attribute concern.
     const boardButton =
       host.querySelector<HTMLButtonElement>(".glossa-board-add");
     if (boardButton && boardKey)
       this.boardButtonKeys.set(boardButton, boardKey);
-    if (info.warning) {
-      // `warning` arrives already localized from the store; show it as is.
+    if (info?.warning) {
       ztoolkit.UI.appendElement(
         {
           tag: "div",
@@ -1127,9 +1407,7 @@ export class ChatView {
         host,
       );
     }
-    // The folded draft is only worth showing when it differs from the final
-    // body; a kept draft after a failed or stopped review is the body itself.
-    if (info.draft && info.draft !== turn.content) {
+    if (info?.draft && info.draft !== turn.content) {
       const details = ztoolkit.UI.appendElement(
         {
           tag: "details",
@@ -1177,10 +1455,10 @@ export class ChatView {
   }
 
   /**
-   * Delete one committed translation and the question that produced it. The
+   * Delete one committed Q&A exchange (answer and its user question). The
    * board keeps its own copy; this only edits the transcript.
    */
-  private deleteTranslation(sessionId: string, turnIndex: number) {
+  private deleteExchange(sessionId: string, turnIndex: number) {
     const key = this.key;
     if (!key) return;
     const bucket = conversations.get(key);
@@ -1189,15 +1467,15 @@ export class ChatView {
       !Services.prompt.confirm(
         this.win as any,
         "Glossa",
-        getString("translation-delete-confirm"),
+        getString("card-delete-confirm"),
       )
     )
       return;
-    if (!conversations.deleteTranslation(key, sessionId, turnIndex)) {
+    if (!conversations.deleteExchange(key, sessionId, turnIndex)) {
       Services.prompt.alert(
         this.win as any,
         "Glossa",
-        getString("translation-delete-failed"),
+        getString("card-delete-failed"),
       );
     }
   }
@@ -1361,14 +1639,8 @@ export class ChatView {
         button.disabled = !bucket || !bucket.loaded || !!bucket.storageError;
       });
     this.root
-      .querySelectorAll<HTMLButtonElement>(".glossa-tag")
-      .forEach((button: HTMLButtonElement) => {
-        button.disabled =
-          busy || !bucket || !bucket.loaded || !!bucket.storageError;
-      });
-    this.root
       .querySelectorAll<HTMLButtonElement>(
-        ".glossa-translation-review, .glossa-translation-delete",
+        ".glossa-translation-review, .glossa-card-delete",
       )
       .forEach((button: HTMLButtonElement) => {
         button.disabled =
@@ -1378,27 +1650,8 @@ export class ChatView {
     this.root.classList.toggle("glossa-busy", busy);
   }
 
-  renderTags() {
-    const host = this.part(".glossa-tags");
-    host.replaceChildren();
-    for (const tag of getTags()) {
-      ztoolkit.UI.appendElement(
-        {
-          tag: "button",
-          namespace: "html",
-          classList: ["glossa-tag"],
-          properties: { textContent: tag.name },
-          styles: { background: `${tag.color}22`, color: tag.color },
-          listeners: [{ type: "click", listener: () => void this.runTag(tag) }],
-        },
-        host,
-      );
-    }
-  }
-
   renderMode() {
-    this.part<HTMLSelectElement>(".glossa-mode-select").value = contextMode();
-    this.syncQuote();
+    this.syncContextToggle();
   }
 
   /** Profile switcher; hidden until the user saves a profile. */
@@ -1442,93 +1695,53 @@ export class ChatView {
     if (!input || runner.busy || !this.target) return;
     const bucket = conversations.get(this.target.key);
     if (!bucket.loaded || bucket.storageError) return;
-    const selection = this.quoted;
+    const sentItems = [...this.contextItems];
+    const sentAttachPaper = this.attachPaperWithContext;
     box.value = "";
-    const mode = contextMode();
+    // WYSIWYG context rule:
+    // - When the user staged context items, send ONLY those items by default
+    //   unless they explicitly turned on "+ Search full paper".
+    // - When no items are staged, follow the "Use current paper" toggle.
+    const mode: ContextMode = sentItems.length
+      ? sentAttachPaper
+        ? "related"
+        : "chat"
+      : usePaperContext()
+        ? "related"
+        : "chat";
     const sentKey = this.target.key;
     const sentSession = conversations.active(sentKey).id;
+    const summary = summarizeContextItems(sentItems, this.contextKindLabels());
     const answered = await runner.ask({
       target: this.target,
       sessionId: sentSession,
-      display: selection ? `${previewQuote(selection)} · ${input}` : input,
+      display: summary ? `${summary} · ${input}` : input,
       build: (target, snapshot) =>
-        renderQuestion(input, target, mode, snapshot, selection),
+        renderQuestion(input, target, mode, snapshot, undefined, sentItems),
     });
-    // A failed question does not have to be retyped.
+    // A failed question restores both the typed text and the staged context.
     if (!answered) {
       if (
         this.key === sentKey &&
         conversations.active(sentKey).id === sentSession
       ) {
         if (!box.value) box.value = input;
+        if (!this.contextItems.length && sentItems.length) {
+          this.contextItems = sentItems;
+          this.attachPaperWithContext = sentAttachPaper;
+          this.syncContextTray();
+        }
       } else {
         const draftKey = sentKey + "#" + sentSession;
         const draft = this.drafts.get(draftKey);
-        if (!draft?.text)
-          this.drafts.set(draftKey, { text: input, quote: selection });
+        if (!draft?.text) {
+          this.drafts.set(draftKey, {
+            text: input,
+            items: draft?.items?.length ? draft.items : sentItems,
+          });
+        }
       }
     }
-  }
-
-  private async runTag(tag: CommandTag) {
-    this.refreshTarget();
-    if (runner.busy || !this.target) return;
-    const bucket = conversations.get(this.target.key);
-    if (!bucket.loaded || bucket.storageError) return;
-    const input = this.input.value.trim();
-    const selection = this.quoted;
-    if (!input && needsQuestion(tag.template, selection)) {
-      this.askForInput(tag.name);
-      return;
-    }
-    // Only the standard translation template gets translation metadata; a
-    // user-edited prompt is never assumed to produce a reviewable translation.
-    const standardTranslate = tag.template.trim() === TRANSLATE_TEMPLATE.trim();
-    // Same rule collectContext applies: an explicit quote wins, otherwise the
-    // live PDF selection. Snapshot it now so the rendered prompt and the
-    // recorded source describe the same text.
-    const effectiveSelection = (selection || getPDFSelection() || "").trim();
-    // TRANSLATE_TEMPLATE renders {{selection}} and {{input}} together, so the
-    // review source must contain both parts the model actually translates.
-    const source = [effectiveSelection, input]
-      .filter(Boolean)
-      .join("\n")
-      .trim();
-    await runner.ask({
-      target: this.target,
-      sessionId: conversations.active(this.target.key).id,
-      display: input ? `${tag.name} · ${input}` : tag.name,
-      build: async (target, snapshot) => {
-        const rendered = await renderTemplate(
-          tag.template,
-          input,
-          target,
-          snapshot,
-          effectiveSelection,
-        );
-        if (standardTranslate && source) {
-          rendered.translationRequest = { mode: "quick", source };
-        }
-        return rendered;
-      },
-    });
-  }
-
-  /** Point at the empty input box until the user types. */
-  private askForInput(tagName: string) {
-    const box = this.input;
-    const original = getString("input-placeholder");
-    box.placeholder = getString("tag-needs-input", { args: { name: tagName } });
-    box.classList.add("glossa-needs-input");
-    box.addEventListener(
-      "input",
-      () => {
-        box.placeholder = original;
-        box.classList.remove("glossa-needs-input");
-      },
-      { once: true },
-    );
-    box.focus({ preventScroll: true });
   }
 
   private syncSession() {
@@ -1539,17 +1752,16 @@ export class ChatView {
     if (this.shownSession) {
       this.drafts.set(this.shownSession, {
         text: this.input.value,
-        quote: this.quoted,
-        page: this.quotedPage,
+        items: [...this.contextItems],
       });
     }
     this.shownSession = next;
     this.part<HTMLInputElement>(".glossa-session-search").value = "";
     const draft = this.drafts.get(next);
     this.input.value = draft?.text || "";
-    this.quoted = draft?.quote || "";
-    this.quotedPage = draft?.page;
-    this.syncQuote();
+    this.contextItems = draft?.items ? [...draft.items] : [];
+    this.expandedContextId = undefined;
+    this.syncContextTray();
     this.part(".glossa-session-status").textContent = "";
     this.part(".glossa-session-rename-form").hidden = true;
   }
@@ -1971,16 +2183,6 @@ export class ChatView {
 }
 
 /**
- * A template built around a typed question ({{input}}) has nothing to ask
- * without one, unless it can use the PDF selection instead.
- */
-function needsQuestion(template: string, quoted?: string) {
-  const keys = templateKeys(template);
-  if (!keys.has("input")) return false;
-  return !(keys.has("selection") && (quoted || getPDFSelection()));
-}
-
-/**
  * Extract readable text from a rendered answer, preserving the line breaks
  * that textContent would drop between paragraphs, list items, code and rows.
  */
@@ -2048,10 +2250,6 @@ function messageOf(error: unknown, fallbackKey: string) {
     : getString(fallbackKey);
 }
 
-function previewQuote(text: string) {
-  return text.length > 40 ? `${text.slice(0, 40)}…` : text;
-}
-
 function wordCount(text: string) {
   return text.split(/\s+/).filter(Boolean).length;
 }
@@ -2079,8 +2277,6 @@ function formatSessionTime(value: string) {
   return new Date(time).toLocaleDateString();
 }
 
-const QUOTE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 4h10M3 8h10M3 12h6"/></svg>`;
-
 const SEND_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 12.5V3.5"/><path d="M4.5 7 8 3.5 11.5 7"/></svg>`;
 
 const COPY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="9" rx="1.6"/><path d="M10.5 5.5v-2A1.6 1.6 0 0 0 8.9 1.9H3.6A1.6 1.6 0 0 0 2 3.5v5.3a1.6 1.6 0 0 0 1.6 1.6h2"/></svg>`;
@@ -2089,11 +2285,9 @@ const CHECK_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="1
 
 const GLOSSARY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14.5A1.5 1.5 0 0 1 2.5 13V3a1.5 1.5 0 0 1 1.5-1.5H13.5v11H4.5A1.5 1.5 0 0 0 3 14z"/><path d="M4 12.5h9.5"/><path d="M6.5 5h3M6.5 7.5h5"/></svg>`;
 
-function contextMode(): ContextMode {
-  const mode = String(getPref("chat.contextMode") || "");
-  return (CONTEXT_MODES as readonly string[]).includes(mode)
-    ? (mode as ContextMode)
-    : "related";
+/** Whether direct questions without staged context should query the current paper. */
+function usePaperContext(): boolean {
+  return String(getPref("chat.contextMode") || "") !== "chat";
 }
 
 function appendBubble(

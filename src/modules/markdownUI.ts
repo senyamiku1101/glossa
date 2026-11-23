@@ -1,18 +1,14 @@
 import { config } from "../../package.json";
 import { getString } from "../utils/locale";
+import { ensureStylesheet } from "../utils/stylesheet";
 import * as queue from "./markdownPrep/queue";
-import { findHostedAttachment, findPreparedBody } from "./markdownPrep/store";
-import {
-  readSettings,
-  readProviderToken,
-  endpointConfigured,
-} from "./markdownPrep/settings";
+import { findHostedAttachment } from "./markdownPrep/store";
+import { readSettings } from "./markdownPrep/settings";
 import { testPaddleConnection } from "./markdownPrep/paddle";
 import { testMineruConnection } from "./markdownPrep/mineru";
 import type { PrepState } from "./markdownPrep/types";
 const HTML = "http://www.w3.org/1999/xhtml",
   SVG = "http://www.w3.org/2000/svg";
-/** Fallback strings will be moved into Fluent in Phase 3b. */
 function text(key: string, fallback: string) {
   try {
     const value = getString(key as Parameters<typeof getString>[0]);
@@ -81,53 +77,15 @@ export async function convertItemsInteractive(items: Zotero.Item[]) {
     report(error);
   }
 }
-export function convertSelectionInteractive(items?: Zotero.Item[]) {
-  return convertItemsInteractive(items || selectionOrCurrentPdf());
-}
 export function convertCurrentPdfInteractive() {
   const pdf = currentReaderPdf();
   return convertItemsInteractive(pdf ? [pdf] : []);
 }
-export function convertCollectionInteractive(collection?: Zotero.Collection) {
-  const selected =
-    collection || Zotero.getActiveZoteroPane()?.getSelectedCollection();
-  return convertItemsInteractive(selected ? selected.getChildItems() : []);
-}
-export function cancelQueueInteractive() {
-  return queue.cancelAll();
-}
 export const resumeQueue = queue.resumePending;
-export function cloudConfigured() {
-  const s = readSettings();
-  return (
-    endpointConfigured(s) &&
-    ((s.provider === "mineru-cloud" && s.mineru.selfHosted) ||
-      !!readProviderToken(s))
-  );
-}
-export function endpointInsecure() {
-  return !endpointConfigured(readSettings());
-}
-export function cloudStatusText() {
-  return cloudConfigured()
-    ? text("markdown-cloud-ready", "云端解析已配置")
-    : text("markdown-cloud-missing", "请配置解析服务与 API Key");
-}
 export function testCurrentProviderConnection() {
   return readSettings().provider === "mineru-cloud"
     ? testMineruConnection()
     : testPaddleConnection();
-}
-export async function localBodyCount() {
-  let count = 0;
-  for (const row of queue.getStates()) {
-    const pdf = Zotero.Items.getByLibraryAndKey(
-      row.libraryID,
-      row.attachmentKey,
-    );
-    if (pdf && (await findPreparedBody(pdf))) count++;
-  }
-  return count;
 }
 export async function deleteSelectionInteractive(
   items = selectionOrCurrentPdf(),
@@ -140,10 +98,37 @@ export async function deleteSelectionInteractive(
 }
 const windows = new Map<Window, () => void>();
 const menuIDs: string[] = [];
+const TOOLBAR_WIDGET_ID = `${config.addonRef}-bgtasks-toolbar`;
 let menusRegistered = false;
 export function registerMarkdownUI(win: _ZoteroTypes.MainWindow) {
   if (windows.has(win)) return;
   const cleanups: (() => void)[] = [];
+  try {
+    ensureStylesheet?.(win);
+  } catch (error) {
+    report(error);
+  }
+  const toolbar = win.document.getElementById("zotero-items-toolbar");
+  if (toolbar) {
+    win.document.getElementById(TOOLBAR_WIDGET_ID)?.remove();
+    const widget = createBackgroundTasksWidget(win, { mode: "toolbar" });
+    widget.root.id = TOOLBAR_WIDGET_ID;
+    const found =
+      toolbar.querySelector("#zotero-tb-search") ||
+      toolbar.querySelector("#zotero-tb-search-textbox") ||
+      toolbar.querySelector("search-textbox") ||
+      toolbar.querySelector("#zotero-tb-sync");
+    let anchor: Element | null = found;
+    while (anchor?.parentElement && anchor.parentElement !== toolbar) {
+      anchor = anchor.parentElement;
+    }
+    if (anchor && anchor.parentNode === toolbar) {
+      toolbar.insertBefore(widget.root, anchor);
+    } else {
+      toolbar.append(widget.root);
+    }
+    cleanups.push(() => widget.dispose());
+  }
   if (!menusRegistered && Zotero.MenuManager) {
     for (const target of ["item", "collection"] as const) {
       const id = config.addonRef + "-markdown-" + target;
@@ -205,7 +190,9 @@ export function registerMarkdownUI(win: _ZoteroTypes.MainWindow) {
         const node = win.document.createXULElement("menuitem");
         node.setAttribute(
           "label",
-          deleting ? "删除正文 Markdown" : "转换正文 Markdown",
+          deleting
+            ? text("markdown-menu-delete", "删除正文 Markdown")
+            : text("markdown-menu-convert", "转换正文 Markdown"),
         );
         const command = () => {
           const collection =
@@ -297,20 +284,34 @@ function stageLabel(row: PrepState) {
   }
   return text("background-tasks-status-" + row.status, row.status);
 }
-export function createBackgroundTasksWidget(win: Window) {
+export function createBackgroundTasksWidget(
+  win: Window,
+  options: { mode?: "inline" | "toolbar" } = {},
+) {
   const doc = win.document;
+  const toolbarMode = options.mode === "toolbar";
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls: string) => {
     const node = doc.createElementNS(HTML, tag) as HTMLElementTagNameMap[K];
     node.className = cls;
     return node;
   };
-  const root = el("div", "glossa-bgtasks-root");
+  const root = el(
+    "div",
+    toolbarMode
+      ? "glossa-bgtasks-root glossa-bgtasks-toolbar"
+      : "glossa-bgtasks-root",
+  );
   const trigger = el("button", "glossa-bgtasks-trigger");
   trigger.type = "button";
   trigger.title = text("background-tasks-title", "后台任务");
   trigger.setAttribute("aria-label", trigger.title);
   trigger.setAttribute("aria-expanded", "false");
-  const panel = el("div", "glossa-bgtasks-panel");
+  const panel = el(
+    "div",
+    toolbarMode
+      ? "glossa-bgtasks-panel glossa-bgtasks-popover"
+      : "glossa-bgtasks-panel",
+  );
   panel.hidden = true;
   panel.setAttribute("role", "region");
   panel.setAttribute("aria-label", trigger.title);
@@ -330,7 +331,13 @@ export function createBackgroundTasksWidget(win: Window) {
   header.append(title, clear, close);
   const list = el("div", "glossa-bgtasks-list");
   panel.append(header, list);
-  root.append(trigger, panel);
+  const portalHost = toolbarMode ? doc.documentElement || doc.body : undefined;
+  if (portalHost) {
+    root.append(trigger);
+    portalHost.append(panel);
+  } else {
+    root.append(trigger, panel);
+  }
   let showTimer: number | undefined,
     hideTimer: number | undefined,
     disposed = false;
@@ -338,39 +345,67 @@ export function createBackgroundTasksWidget(win: Window) {
     win.clearTimeout(showTimer);
     win.clearTimeout(hideTimer);
   };
+  const containsNode = (node: Node | null) =>
+    Boolean(node && (root.contains(node) || panel.contains(node)));
+  const positionPopover = () => {
+    if (!toolbarMode || panel.hidden) return;
+    try {
+      const rect = trigger.getBoundingClientRect();
+      const viewW = win.innerWidth || 1000;
+      const width = Math.min(320, Math.max(220, viewW - 24));
+      const left = Math.max(
+        12,
+        Math.min(rect.right - width, viewW - width - 12),
+      );
+      panel.style.left = `${Math.round(left)}px`;
+      panel.style.top = `${Math.round(rect.bottom + 6)}px`;
+      panel.style.right = "auto";
+    } catch {
+      // Ignore mock environments without getBoundingClientRect.
+    }
+  };
   const setOpen = (open: boolean) => {
     stopTimers();
     panel.hidden = !open;
     trigger.setAttribute("aria-expanded", String(open));
+    if (open) positionPopover();
   };
   trigger.onclick = () => setOpen(Boolean(panel.hidden));
-  root.onmouseenter = () => {
+  const scheduleOpen = () => {
     stopTimers();
     showTimer = win.setTimeout(() => setOpen(true), 350);
   };
-  root.onmouseleave = () => {
+  const scheduleClose = () => {
     stopTimers();
     hideTimer = win.setTimeout(() => {
-      if (!root.contains(doc.activeElement)) setOpen(false);
+      if (!containsNode(doc.activeElement)) setOpen(false);
     }, 220);
   };
+  root.onmouseenter = scheduleOpen;
+  root.onmouseleave = scheduleClose;
+  if (portalHost) {
+    panel.onmouseenter = stopTimers;
+    panel.onmouseleave = scheduleClose;
+    panel.addEventListener("focusin", stopTimers);
+    panel.addEventListener("focusout", scheduleClose);
+  }
   root.addEventListener("focusin", stopTimers);
-  root.addEventListener("focusout", () => {
-    hideTimer = win.setTimeout(() => {
-      if (!root.contains(doc.activeElement)) setOpen(false);
-    }, 220);
-  });
-  root.onkeydown = (e) => {
-    if ((e as KeyboardEvent).key === "Escape") {
+  root.addEventListener("focusout", scheduleClose);
+  const onKeyDown = (e: Event) => {
+    if ((e as KeyboardEvent).key === "Escape" && !panel.hidden) {
       e.stopPropagation();
       setOpen(false);
       trigger.focus();
     }
   };
+  root.onkeydown = onKeyDown;
+  if (portalHost) panel.onkeydown = onKeyDown;
   const outside = (e: Event) => {
-    if (!root.contains(e.target as Node)) setOpen(false);
+    if (!containsNode(e.target as Node | null)) setOpen(false);
   };
   doc.addEventListener("pointerdown", outside);
+  const onResize = () => positionPopover();
+  if (toolbarMode) win.addEventListener?.("resize", onResize);
   const render = (rows: PrepState[]) => {
     if (disposed) return;
     const busy = rows.some(active);
@@ -440,8 +475,12 @@ export function createBackgroundTasksWidget(win: Window) {
         };
         item.append(b);
       };
-      const pdf = () =>
-        Zotero.Items.getByLibraryAndKey(row.libraryID, row.attachmentKey);
+      const pdf = async () =>
+        Zotero.Items.getByLibraryAndKey(row.libraryID, row.attachmentKey) ||
+        (await Zotero.Items.getByLibraryAndKeyAsync(
+          row.libraryID,
+          row.attachmentKey,
+        ));
       if (active(row))
         action("close", text("background-tasks-cancel", "取消"), () =>
           queue.cancel(row.key),
@@ -461,7 +500,7 @@ export function createBackgroundTasksWidget(win: Window) {
           "done",
           text("background-tasks-open", "打开 Markdown"),
           async () => {
-            const source = pdf();
+            const source = await pdf();
             const attachment =
               source &&
               (await findHostedAttachment(source, row.hostedAttachmentKey));
@@ -480,6 +519,8 @@ export function createBackgroundTasksWidget(win: Window) {
     stopTimers();
     unsubscribe();
     doc.removeEventListener("pointerdown", outside);
+    if (toolbarMode) win.removeEventListener?.("resize", onResize);
+    panel.remove();
     root.remove();
     widgets.delete(dispose);
   };

@@ -223,12 +223,11 @@ export class ConversationStore {
   }
 
   /**
-   * Delete one committed translation, together with the user turn that
-   * produced it. The board keeps its own copy; this only edits the transcript.
-   * Running or read-only sessions are refused, like the other destructive
-   * actions.
+   * Delete one committed Q&A exchange (an assistant turn and the user turn
+   * that produced it). The board keeps its own copy; this only edits the
+   * transcript. Running or read-only sessions are refused.
    */
-  deleteTranslation(key: string, sessionId: string, turnIndex: number) {
+  deleteExchange(key: string, sessionId: string, turnIndex: number) {
     const convo = this.get(key);
     if (
       !convo.loaded ||
@@ -238,8 +237,7 @@ export class ConversationStore {
       return false;
     const session = this.session(key, sessionId);
     const turn = session?.turns[turnIndex];
-    if (!session || !turn || turn.role !== "assistant" || !turn.translation)
-      return false;
+    if (!session || !turn || turn.role !== "assistant") return false;
     const previousTitle = sessionTitle(session.turns);
     const turns = removeExchange(session.turns, turnIndex);
     if (!turns) return false;
@@ -253,6 +251,19 @@ export class ConversationStore {
     this.save(convo);
     this.emit(key, "changed");
     return true;
+  }
+
+  /**
+   * Delete one committed translation, together with the user turn that
+   * produced it. The board keeps its own copy; this only edits the transcript.
+   * Running or read-only sessions are refused, like the other destructive
+   * actions.
+   */
+  deleteTranslation(key: string, sessionId: string, turnIndex: number) {
+    const session = this.session(key, sessionId);
+    const turn = session?.turns[turnIndex];
+    if (!turn?.translation) return false;
+    return this.deleteExchange(key, sessionId, turnIndex);
   }
 
   setBusy(key: string | undefined, sessionId?: string) {

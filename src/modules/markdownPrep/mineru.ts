@@ -1,6 +1,8 @@
 /** MinerU v4 cloud adapter. No Node dependencies and no credentials on presigned URLs. */
 import {
   CONVERTER_VERSION,
+  type BlockLoc,
+  type BlockType,
   type BodyAsset,
   type BodySource,
   type BodySourceInput,
@@ -547,10 +549,14 @@ export async function readMineruZip(bytes: Uint8Array): Promise<ZipEntry[]> {
         "ZIP local entry mismatch",
         "mineru-invalid-output",
       );
-    // Validate every name/size, but only expand Markdown and image resources.
+    // Validate every name/size, but only expand Markdown, images and layout JSON.
     if (
       !name.endsWith("/") &&
-      (/\.md$/i.test(name) || /^images\//i.test(name))
+      (/\.md$/i.test(name) ||
+        /^images\//i.test(name) ||
+        /(?:^|\/)(?:[^/]*content_list|middle_json|[^/]*middle|layout)\.json$/i.test(
+          name,
+        ))
     ) {
       const data = bytes.subarray(dataOffset, dataOffset + compressed);
       const content =
@@ -571,6 +577,7 @@ export async function readMineruZip(bytes: Uint8Array): Promise<ZipEntry[]> {
 export function mineruZipBody(entries: ZipEntry[]): {
   markdown: string;
   assets: BodyAsset[];
+  blocks: BlockLoc[];
 } {
   if (entries.length > MAX_MINERU_ENTRIES)
     throw new MineruError("Too many ZIP files", "mineru-too-large");
@@ -597,6 +604,7 @@ export function mineruZipBody(entries: ZipEntry[]): {
     .replace(/^\uFEFF/, "");
   const assets: BodyAsset[] = [];
   const used = new Set<string>();
+  const assetBySource = new Map<string, string>();
   for (const entry of entries) {
     if (!/^images\//i.test(entry.name)) continue;
     let target = hostedImageFilename(entry.name);
@@ -620,6 +628,7 @@ export function mineruZipBody(entries: ZipEntry[]): {
       encoded,
       "./" + encoded,
     ])) {
+      assetBySource.set(from, target);
       markdown = markdown
         .split("](" + from + ")")
         .join("](" + target + ")")
@@ -632,7 +641,288 @@ export function mineruZipBody(entries: ZipEntry[]): {
         .join("src='" + target + "'");
     }
   }
-  return { markdown, assets };
+  const blocks = parseMineruBlocks(entries, markdown, assetBySource);
+  return { markdown, assets, blocks };
+}
+
+const MINERU_SKIP_TYPES = new Set([
+  "discarded",
+  "header",
+  "page_header",
+  "footer",
+  "page_footer",
+  "page_number",
+  "page_footnote",
+]);
+
+function mapMineruBlockType(
+  rawType: string,
+  textLevel?: number,
+): BlockType | undefined {
+  const lower = rawType.trim().toLowerCase();
+  if (!lower || MINERU_SKIP_TYPES.has(lower)) return undefined;
+  if (lower === "title" || lower === "heading") return "heading";
+  if (lower === "text" || lower === "paragraph") {
+    return typeof textLevel === "number" && textLevel > 0
+      ? "heading"
+      : "paragraph";
+  }
+  if (
+    lower === "equation" ||
+    lower === "interline_equation" ||
+    lower === "formula"
+  ) {
+    return "equation";
+  }
+  if (lower === "image" || lower === "figure" || lower === "chart") {
+    return "image";
+  }
+  if (lower === "table") return "table";
+  if (
+    lower === "image_caption" ||
+    lower === "table_caption" ||
+    lower === "chart_caption" ||
+    lower === "caption"
+  ) {
+    return "caption";
+  }
+  if (lower === "list") return "list";
+  if (lower === "code" || lower === "algorithm") return "preformatted";
+  if (lower === "blockquote") return "blockquote";
+  if (lower === "footnote" || lower === "note") return "note";
+  return "paragraph";
+}
+
+function mineruText(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (Array.isArray(value)) {
+    return value
+      .map((part) => mineruText(part))
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+  }
+  if (value && typeof value === "object") {
+    const rec = value as Record<string, unknown>;
+    if ("content" in rec) return mineruText(rec.content);
+    if ("text" in rec) return mineruText(rec.text);
+  }
+  return "";
+}
+
+function clampUnit(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function normalizeMineruBox(
+  bbox: unknown,
+  scale: 1000 | 1,
+): [number, number, number, number] | undefined {
+  if (!Array.isArray(bbox) || bbox.length !== 4) return undefined;
+  const nums = bbox.map((v) => (typeof v === "number" ? v : Number(v)));
+  if (!nums.every((n) => Number.isFinite(n))) return undefined;
+  const divisor = scale === 1000 && nums.some((n) => n > 1.001) ? 1000 : 1;
+  const x1 = clampUnit(Math.min(nums[0], nums[2]) / divisor);
+  const y1 = clampUnit(Math.min(nums[1], nums[3]) / divisor);
+  const x2 = clampUnit(Math.max(nums[0], nums[2]) / divisor);
+  const y2 = clampUnit(Math.max(nums[1], nums[3]) / divisor);
+  return x2 > x1 && y2 > y1 ? [x1, y1, x2, y2] : undefined;
+}
+
+function resolveMineruAsset(
+  imgPath: unknown,
+  assetBySource: Map<string, string>,
+): string | undefined {
+  if (typeof imgPath !== "string" || !imgPath.trim()) return undefined;
+  const raw = imgPath.trim().replace(/\\/g, "/");
+  const stripped = raw.replace(/^\.\//, "");
+  return (
+    assetBySource.get(raw) ??
+    assetBySource.get(stripped) ??
+    assetBySource.get("./" + stripped)
+  );
+}
+
+function parseJsonEntry(entry: ZipEntry | undefined): unknown {
+  if (!entry) return undefined;
+  try {
+    return JSON.parse(
+      new TextDecoder("utf-8", { fatal: true })
+        .decode(entry.bytes)
+        .replace(/^\uFEFF/, ""),
+    );
+  } catch {
+    return undefined;
+  }
+}
+
+function locateBlockOffsets(
+  markdown: string,
+  candidates: string[],
+  cursor: number,
+): { start: number; end: number; nextCursor: number } {
+  for (const raw of candidates) {
+    const needle = raw.trim();
+    if (!needle) continue;
+    const found = markdown.indexOf(needle, Math.max(0, cursor));
+    if (found >= 0) {
+      return {
+        start: found,
+        end: found + needle.length,
+        nextCursor: found + needle.length,
+      };
+    }
+    const earlier = markdown.indexOf(needle);
+    if (earlier >= 0) {
+      return {
+        start: earlier,
+        end: earlier + needle.length,
+        nextCursor: Math.max(cursor, earlier + needle.length),
+      };
+    }
+  }
+  return { start: cursor, end: cursor, nextCursor: cursor };
+}
+
+function parseMineruBlocks(
+  entries: ZipEntry[],
+  markdown: string,
+  assetBySource: Map<string, string>,
+): BlockLoc[] {
+  const contentListEntry =
+    entries.find((e) => /(?:^|\/)[^/]*content_list\.json$/i.test(e.name)) ??
+    entries.find((e) => /(?:^|\/)content_list\.json$/i.test(e.name));
+  const contentList = parseJsonEntry(contentListEntry);
+  if (Array.isArray(contentList) && contentList.length) {
+    return parseMineruContentList(contentList, markdown, assetBySource);
+  }
+  const middleEntry = entries.find((e) =>
+    /(?:^|\/)middle_json\.json$/i.test(e.name),
+  );
+  const middle = parseJsonEntry(middleEntry);
+  if (middle && typeof middle === "object" && !Array.isArray(middle)) {
+    return parseMineruDocvortex(
+      middle as Record<string, unknown>,
+      markdown,
+      assetBySource,
+    );
+  }
+  return [];
+}
+
+function parseMineruContentList(
+  items: unknown[],
+  markdown: string,
+  assetBySource: Map<string, string>,
+): BlockLoc[] {
+  const blocks: BlockLoc[] = [];
+  let cursor = 0;
+  for (const raw of items) {
+    const item = record(raw);
+    const rawType = typeof item.type === "string" ? item.type : "";
+    const textLevel =
+      typeof item.text_level === "number" ? item.text_level : undefined;
+    const type = mapMineruBlockType(rawType, textLevel);
+    if (!type) continue;
+    const pageIndex = Number(item.page_idx);
+    if (!Number.isInteger(pageIndex) || pageIndex < 0) continue;
+    const box = normalizeMineruBox(item.bbox, 1000);
+    const assetPath = resolveMineruAsset(item.img_path, assetBySource);
+    const caption =
+      mineruText(item.image_caption) ||
+      mineruText(item.table_caption) ||
+      mineruText(item.chart_caption);
+    let text =
+      mineruText(item.text) ||
+      mineruText(item.content) ||
+      mineruText(item.table_body);
+    if (type === "equation" && text && !text.includes("$")) {
+      text = `$$\n${text}\n$$`;
+    }
+    if (!text && !box && !assetPath && !caption) continue;
+    const searchCandidates: string[] = [];
+    if (text) {
+      searchCandidates.push(text);
+      if (type === "equation") {
+        searchCandidates.push(text.replace(/^\$\$|\$\$$/g, "").trim());
+      }
+    }
+    if (assetPath) searchCandidates.push(assetPath);
+    if (caption) searchCandidates.push(caption);
+    const { start, end, nextCursor } = locateBlockOffsets(
+      markdown,
+      searchCandidates,
+      cursor,
+    );
+    cursor = nextCursor;
+    blocks.push({
+      type,
+      pageIndex,
+      ...(box
+        ? {
+            pageRects: [[pageIndex, ...box]],
+            pageRectsSpace: "page-fraction" as const,
+          }
+        : {}),
+      ...(text ? { text } : {}),
+      ...(assetPath ? { assetPath } : {}),
+      ...(caption ? { caption } : {}),
+      mdStart: start,
+      mdEnd: Math.max(start, end),
+    });
+  }
+  return blocks;
+}
+
+function parseMineruDocvortex(
+  middle: Record<string, unknown>,
+  markdown: string,
+  assetBySource: Map<string, string>,
+): BlockLoc[] {
+  const pages = Array.isArray(middle.pages) ? middle.pages : [];
+  const blocks: BlockLoc[] = [];
+  let cursor = 0;
+  for (const rawPage of pages) {
+    const page = record(rawPage);
+    const pageIndex = Number(page.page_idx);
+    if (!Number.isInteger(pageIndex) || pageIndex < 0) continue;
+    const rawBlocks = Array.isArray(page.blocks) ? page.blocks : [];
+    for (const rawBlock of rawBlocks) {
+      const block = record(rawBlock);
+      const rawType = typeof block.type === "string" ? block.type : "";
+      const level = typeof block.level === "number" ? block.level : undefined;
+      const type = mapMineruBlockType(rawType, level);
+      if (!type) continue;
+      const box = normalizeMineruBox(block.bbox, 1);
+      const text = mineruText(block.content);
+      const assetPath = resolveMineruAsset(
+        block.img_path ?? block.image_path,
+        assetBySource,
+      );
+      if (!text && !box && !assetPath) continue;
+      const { start, end, nextCursor } = locateBlockOffsets(
+        markdown,
+        [text, assetPath || ""].filter(Boolean),
+        cursor,
+      );
+      cursor = nextCursor;
+      blocks.push({
+        type,
+        pageIndex,
+        ...(box
+          ? {
+              pageRects: [[pageIndex, ...box]],
+              pageRectsSpace: "page-fraction" as const,
+            }
+          : {}),
+        ...(text ? { text } : {}),
+        ...(assetPath ? { assetPath } : {}),
+        mdStart: start,
+        mdEnd: Math.max(start, end),
+      });
+    }
+  }
+  return blocks;
 }
 
 export async function runMineruBodyForTests(
@@ -841,14 +1131,16 @@ export async function runMineruBodyForTests(
     );
     checkCancelled(cancel);
     const count = Math.max(1, pages);
+    const parsedPages =
+      extractedPages > 0 ? Math.min(count, extractedPages) : count;
     const textChars = converted.markdown.replace(/\s/g, "").length;
     const judgement = judgeQuality({
       parserId: "mineru-cloud",
       textChars,
       totalPages: count,
-      parsedPages: count,
+      parsedPages,
       emptyPages: 0,
-      unverifiedBlockPages: count,
+      unverifiedBlockPages: 0,
       structuralPages: 0,
       tablesPreserved: /\|.*\|/.test(converted.markdown),
       equationsLatex: converted.markdown.includes("$"),
@@ -874,7 +1166,7 @@ export async function runMineruBodyForTests(
       body: {
         markdown: converted.markdown,
         assets: converted.assets,
-        blocks: [],
+        blocks: converted.blocks,
         source: { ...input.fingerprint, pageCount: pages },
         parserId: "mineru-cloud",
         processorVersion: config.modelVersion,

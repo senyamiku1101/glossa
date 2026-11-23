@@ -5,9 +5,17 @@
  */
 import type { Protocol, ResolvedConfig, UrlMode } from "./config";
 
+export type PromptImage = {
+  mimeType: string;
+  /** Raw base64 bytes without a `data:...;base64,` prefix. */
+  data: string;
+};
+
 export type ChatMessage = {
   role: "system" | "user" | "assistant";
   content: string;
+  /** Transient multimodal images for this message only (never stored in history). */
+  images?: PromptImage[];
 };
 
 export type HttpRequest = {
@@ -148,6 +156,54 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function formatMessage(protocol: Protocol, message: ChatMessage) {
+  const images = message.images?.filter(
+    (image) => image.mimeType && image.data,
+  );
+  if (!images?.length || message.role !== "user") {
+    return { role: message.role, content: message.content };
+  }
+  switch (protocol) {
+    case "openai-responses":
+      return {
+        role: message.role,
+        content: [
+          { type: "input_text", text: message.content },
+          ...images.map((image) => ({
+            type: "input_image",
+            image_url: `data:${image.mimeType};base64,${image.data}`,
+          })),
+        ],
+      };
+    case "anthropic-messages":
+      return {
+        role: message.role,
+        content: [
+          ...images.map((image) => ({
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: image.mimeType,
+              data: image.data,
+            },
+          })),
+          { type: "text", text: message.content },
+        ],
+      };
+    default:
+      return {
+        role: message.role,
+        content: [
+          { type: "text", text: message.content },
+          ...images.map((image) => ({
+            type: "image_url",
+            image_url: { url: `data:${image.mimeType};base64,${image.data}` },
+          })),
+        ],
+      };
+  }
+}
+
 export function buildChatRequest(
   config: ResolvedConfig,
   messages: ChatMessage[],
@@ -157,7 +213,9 @@ export function buildChatRequest(
     .filter((m) => m.role === "system")
     .map((m) => m.content)
     .join("\n\n");
-  const turns = messages.filter((m) => m.role !== "system");
+  const turns = messages
+    .filter((m) => m.role !== "system")
+    .map((m) => formatMessage(config.protocol, m));
   const { temperature, maxTokens, reasoningEffort } = config;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -195,7 +253,11 @@ export function buildChatRequest(
       break;
     default:
       headers.Authorization = `Bearer ${config.keys.api}`;
-      body = { model: config.model, messages, stream: true };
+      body = {
+        model: config.model,
+        messages: messages.map((m) => formatMessage("openai-chat", m)),
+        stream: true,
+      };
       if (temperature.enabled) body.temperature = temperature.value;
       if (maxTokens.enabled) {
         // OpenAI's reasoning models reject max_tokens; most other hosts
@@ -390,7 +452,9 @@ export function parseFinalBody(protocol: Protocol, raw: string) {
   } else {
     const message = json?.choices?.[0]?.message;
     result.text = String(message?.content ?? "");
-    result.reasoning = String(message?.reasoning_content ?? "");
+    result.reasoning = String(
+      message?.reasoning_content ?? message?.reasoning ?? "",
+    );
   }
   return result;
 }

@@ -7,7 +7,6 @@
  * actually preserved; any placeholder or missing page downgrades the grade.
  */
 import {
-  STRUCTURAL_LOSS_PARTIAL_RATIO,
   TEXT_MIN_CHARS,
   UNVERIFIED_BLOCK_RATIO,
   type CaveatCode,
@@ -30,6 +29,10 @@ export type QualityInput = {
   unverifiedBlockPages: number;
   /** Pages containing table/equation/image blocks. */
   structuralPages: number;
+  /** Layout blocks included at least one table. */
+  hasTableBlocks?: boolean;
+  /** Layout blocks included at least one equation. */
+  hasEquationBlocks?: boolean;
   /** Markdown carries a GFM pipe table. */
   tablesPreserved: boolean;
   /** Markdown carries `$...$` / `$$...$$` formulas. */
@@ -114,40 +117,39 @@ export function judgeQuality(input: QualityInput): QualityJudgement {
     status = "partial";
     caveats.add("page-blocks-unverified");
   }
-  if (
-    input.structuralPages > 0 &&
-    input.structuralPages / Math.max(1, parsedPages) >
-      STRUCTURAL_LOSS_PARTIAL_RATIO
-  ) {
-    status = "partial";
-  }
-
   // Tables/equations/images must not be claimed when the Markdown lacks them.
+  const hasTables = input.hasTableBlocks ?? input.structuralPages > 0;
   const tables = input.tablesPreserved
     ? "preserved"
-    : input.structuralPages > 0
+    : hasTables
       ? "text"
       : "none";
   if (tables === "text") caveats.add("table-cells-unverified");
 
+  const hasEquations = input.hasEquationBlocks ?? input.structuralPages > 0;
   const equations = input.equationsLatex
     ? "latex"
-    : input.structuralPages > 0
+    : hasEquations
       ? "text"
       : "none";
   if (equations === "text") caveats.add("equation-not-latex");
 
   let images: Quality["images"] = "none";
-  if (input.assetsDeclared > 0 || input.hasImages) {
-    if (
-      input.assetsResolved >= input.assetsDeclared &&
-      input.assetsResolved > 0
-    ) {
+  if (input.assetsDeclared > 0) {
+    if (input.assetsResolved >= input.assetsDeclared) {
       images = "embedded";
     } else if (input.assetsResolved > 0) {
       images = "embedded";
       status = "partial";
       caveats.add("asset-missing");
+    } else {
+      images = "placeholder";
+      status = "partial";
+      caveats.add("image-placeholder");
+    }
+  } else if (input.hasImages) {
+    if (input.assetsResolved > 0) {
+      images = "embedded";
     } else {
       images = "placeholder";
       status = "partial";
@@ -189,6 +191,6 @@ export function judgeQuality(input: QualityInput): QualityJudgement {
       images,
       caveats: [...caveats],
     },
-    status: "done",
+    status,
   };
 }

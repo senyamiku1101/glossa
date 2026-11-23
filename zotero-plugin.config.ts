@@ -21,6 +21,7 @@ export default defineConfig({
       "addon/source/LICENSE",
       "addon/source/COPYRIGHT",
       "addon/source/.env.example",
+      "addon/source/.prettierignore",
     ],
     define: {
       ...pkg.config,

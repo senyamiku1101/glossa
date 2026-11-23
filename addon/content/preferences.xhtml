@@ -483,10 +483,14 @@
             <html:label class="glossa-md-setting"
               ><html:span data-l10n-id="pref-markdown-provider"></html:span
               ><html:select data-pref="markdown.provider"
-                ><html:option value="paddleocr-cloud"
-                  >paddleocr-cloud</html:option
-                ><html:option value="mineru-cloud"
-                  >mineru-cloud</html:option
+                ><html:option
+                  value="paddleocr-cloud"
+                  data-l10n-id="pref-markdown-provider-paddle"
+                  >PaddleOCR</html:option
+                ><html:option
+                  value="mineru-cloud"
+                  data-l10n-id="pref-markdown-provider-mineru"
+                  >MinerU</html:option
                 ></html:select
               ></html:label
             >
@@ -565,16 +569,28 @@
                     data-l10n-id="pref-markdown-model-version"
                   ></html:span
                   ><html:select data-pref="markdown.mineru.modelVersion"
-                    ><html:option value="vlm">vlm</html:option
-                    ><html:option value="pipeline"
-                      >pipeline</html:option
+                    ><html:option
+                      value="vlm"
+                      data-l10n-id="pref-markdown-mineru-vlm"
+                      >VLM</html:option
+                    ><html:option
+                      value="pipeline"
+                      data-l10n-id="pref-markdown-mineru-pipeline"
+                      >Pipeline</html:option
                     ></html:select
                   ></html:label
                 ><html:label class="glossa-md-setting"
                   ><html:span data-l10n-id="pref-markdown-language"></html:span
                   ><html:select data-pref="markdown.mineru.language"
-                    ><html:option value="ch">ch</html:option
-                    ><html:option value="en">en</html:option></html:select
+                    ><html:option
+                      value="ch"
+                      data-l10n-id="pref-markdown-lang-ch"
+                      >中文 (ch)</html:option
+                    ><html:option
+                      value="en"
+                      data-l10n-id="pref-markdown-lang-en"
+                      >English (en)</html:option
+                    ></html:select
                   ></html:label
                 >
                 <html:label class="glossa-check"

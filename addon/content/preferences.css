@@ -1,5 +1,6 @@
 /* Glossa settings pane. Colours use Zotero 7 theme variables with fallbacks. */
 .glossa-prefs {
+  max-width: 1100px;
   --glossa-border: var(--material-panedivider, #d0d0d0);
   --glossa-muted: var(--fill-secondary, #666);
   --glossa-soft: var(--fill-quinary, rgba(0, 0, 0, 0.05));
@@ -32,6 +33,7 @@
   flex-direction: column;
   flex: 0 0 150px;
   min-width: 0;
+  background: var(--material-background, transparent);
   border: 1px solid var(--glossa-border);
   border-radius: 8px;
   overflow: hidden;
@@ -94,6 +96,7 @@
 .glossa-config {
   flex: 1;
   min-width: 0;
+  background: var(--material-background, transparent);
   border: 1px solid var(--glossa-border);
   border-radius: 8px;
 }
@@ -117,6 +120,7 @@
 .glossa-tab[aria-selected="true"] {
   color: var(--glossa-accent);
   border-bottom-color: var(--glossa-accent);
+  font-weight: 600;
 }
 
 .glossa-tabpanel {
@@ -316,9 +320,6 @@
 }
 
 /* Compact settings layout: profiles column + tabbed panels + test row. */
-.glossa-prefs {
-  max-width: 1100px;
-}
 .glossa-prefs h2 {
   margin: 2px 0 4px;
 }
@@ -327,21 +328,8 @@
   font-size: 13px;
   font-weight: 600;
 }
-.glossa-layout {
-  align-items: stretch;
-}
-.glossa-profiles,
-.glossa-config {
-  background: var(--material-background, transparent);
-}
-.glossa-tab[aria-selected="true"] {
-  font-weight: 600;
-}
 .glossa-tabpanel > .glossa-hint:first-child {
   margin-bottom: 2px;
-}
-.glossa-tag-row {
-  padding: 8px 0;
 }
 @media (max-width: 650px) {
   .glossa-layout {

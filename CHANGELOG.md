@@ -4,6 +4,65 @@ All notable changes to Glossa are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.20] - 2026-11-23
+
+### Added
+
+- **Unified Markdown layout position map & multimodal PDF alignment**:
+  PaddleOCR and MinerU conversions now save normalized page-fraction bounding
+  boxes (`blocks.json`), aligning PDF selections, complete paragraphs, figures,
+  tables and display equations cleanly to prepared Markdown with LaTeX formulas
+  intact.
+- **Multimodal vision support across all three API protocols** (OpenAI Chat
+  Completions, OpenAI Responses and Anthropic Messages), with automatic
+  text-only fallback when a text-only model rejects image payloads.
+- **Non-blocking figure, table & display-equation hover overlay** in the PDF
+  reader with 1-click **Add to chat** and **Annotate**, plus a clear ON/OFF
+  reader toolbar toggle button.
+- **Inline translation inside Zotero's native text-selection popup**:
+  `Translate`, `Full` (complete paragraph), `Add to chat` and the glossary
+  shortcut dock right beside Zotero's 8 highlight color squares; translations
+  stream inline inside the expanded popup with 1-click **Save highlight**
+  (saving/updating the translation as a native Zotero highlight annotation),
+  review-model polish, copy and **Add to Glossa chat**.
+- **Multi-context sidebar workbench**: stage multiple text excerpts, full
+  paragraphs, figures (with image thumbnails), tables and equations together in
+  the composer tray, click any card to preview full content or images, remove
+  items individually or clear all, and auto-clear after sending (restoring on
+  failure).
+- **Sticky-note floating board & universal card actions**: every conversation
+  answer card (not just translations) supports **Add to board** and **Delete**;
+  the board now floats like a compact warm sticky-note tab pinned at the top of
+  the workspace, expands over the transcript with Markdown rendering, and lets
+  you send pinned notes straight back into chat context.
+
+### Changed
+
+- **WYSIWYG context control**: removed the redundant bottom colored tag bar and
+  4-mode dropdown. When items are staged in the context tray, Glossa sends only
+  your selected context by default unless you explicitly toggle **+ Search full
+  paper**; with no staged items, a single **Use current paper** toggle switches
+  between paper-grounded Q&A and plain chat.
+- **Cleaner conversation transcript**: collapsed **Reasoning** and **Context**
+  into subtle inline toggle buttons on each answer card header instead of
+  full-width rows between questions and answers.
+- **Main library toolbar background tasks**: moved the Background tasks widget
+  from the crowded Glossa sidebar header into Zotero's main items toolbar beside
+  Quick Search, with a fixed floating popover panel.
+- **Streamlined entry points**: removed redundant Explain / AI Explain actions
+  across the selection popup, hover overlay, sidebar annotation header and
+  annotation context menu, unifying them around **Add to chat**.
+
+### Fixed
+
+- Single-paragraph selection alignment no longer pulls in neighboring
+  paragraphs; spaced inline math (`$ \epsilon $`) and LaTeX accents
+  (`\bar{M}`, `\hat{p}`) render cleanly in Markdown.
+- Moderate multi-paragraph translations (up to 3,500 chars) stay in one
+  combined request instead of repeating the full prompt.
+- Switching directly to Glossa's right-hand reader pane when clicking **Add to
+  chat** from the PDF reader.
+
 ## [0.2.19] - 2026-11-17
 
 ### Added

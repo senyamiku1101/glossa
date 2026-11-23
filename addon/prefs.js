@@ -1,4 +1,3 @@
-pref("enable", true);
 pref("api.protocol", "openai-chat");
 pref("api.url", "https://api.openai.com");
 pref("api.urlMode", "base");
@@ -20,7 +19,7 @@ pref("chatNumber", 6);
 pref("chatNumber.enabled", true);
 pref("chat.contextMode", "related");
 pref("reader.popup", true);
-pref("reader.popupScope", "selection");
+pref("reader.visualOverlay", true);
 pref("tags", "");
 pref("profiles", "[]");
 pref("profiles.active", "");
@@ -32,8 +31,6 @@ pref("board.expanded", false);
 pref("markdown.enabled", true);
 pref("markdown.provider", "paddleocr-cloud");
 pref("markdown.autoOnImport", true);
-pref("markdown.autoOnChange", true);
-pref("markdown.concurrency", 1);
 pref("markdown.readContext", true);
 pref("markdown.bundleCleanupDone", false);
 pref(

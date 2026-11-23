@@ -155,10 +155,6 @@ class Runner {
         );
         return false;
       }
-      const requested = reviewPrompt(info.source, turn.content);
-      const prompt = gloss
-        ? withGlossary(requested, gloss.match(info.source))
-        : requested;
       const reviewed = await streamReview(
         review,
         systemFor(review),
@@ -186,7 +182,7 @@ class Runner {
         );
         return false;
       }
-      const sent = markerPrompt(prompt);
+      const sent = reviewed.prompts[0] ?? "";
       conversations.commitPending(
         key,
         sessionId,
@@ -271,17 +267,51 @@ class Runner {
           gloss,
         )
       : undefined;
-    const result =
-      verified ??
-      (await streamChat(
-        config,
-        [
-          { role: "system", content: system },
-          ...buildHistory(turns, asked, limit),
-        ],
-        onDelta,
-        onCancelReady,
-      ));
+    const history = buildHistory(turns, asked, limit);
+    if (rendered.images?.length && history.length) {
+      const last = history[history.length - 1];
+      if (last.role === "user") {
+        history[history.length - 1] = { ...last, images: rendered.images };
+      }
+    }
+    let result: StreamResult;
+    if (verified) {
+      result = verified;
+    } else {
+      try {
+        result = await streamChat(
+          config,
+          [{ role: "system", content: system }, ...history],
+          onDelta,
+          onCancelReady,
+        );
+      } catch (error) {
+        if (
+          !rendered.images?.length ||
+          !rendered.imageFallbackPrompt ||
+          halted()
+        ) {
+          throw error;
+        }
+        // Text-only models reject multimodal content parts; retry seamlessly
+        // using the position map's clean LaTeX/caption text when available.
+        ztoolkit.log(
+          "[Glossa] multimodal request rejected, retrying with text fallback",
+          error,
+        );
+        const fallbackHistory = buildHistory(
+          turns,
+          rendered.imageFallbackPrompt,
+          limit,
+        );
+        result = await streamChat(
+          config,
+          [{ role: "system", content: system }, ...fallbackHistory],
+          onDelta,
+          onCancelReady,
+        );
+      }
+    }
     if (!result.text) {
       conversations.failPending(
         key,
@@ -786,6 +816,192 @@ async function streamReview(
   return done
     ? { ok: true, text: done, prompts }
     : { ok: false, reason: "failed" };
+}
+
+export type PopupTranslationPiece = { source: string; text: string };
+
+export type PopupTranslationResult = {
+  ok: boolean;
+  text: string;
+  pieces: PopupTranslationPiece[];
+  model?: string;
+  aborted?: boolean;
+  error?: string;
+};
+
+/**
+ * Standalone streaming translation for the floating reader popup card.
+ * Reuses the active model, local glossary, paragraph splitting, and end-marker
+ * verification without writing to sidebar conversation history or blocking
+ * `runner.busy`.
+ */
+export async function streamPopupTranslation(options: {
+  source: string;
+  promptFor: (piece: string, config: ResolvedConfig) => Promise<string>;
+  verifyComplete?: boolean;
+  onDelta: (text: string) => void;
+  onCancelReady: (cancel: () => void) => void;
+  stopped: () => boolean;
+}): Promise<PopupTranslationResult> {
+  const config = readActiveConfig();
+  const system = systemFor(config);
+  const gloss = await safeSnapshot();
+  if (options.stopped()) {
+    return { ok: false, text: "", pieces: [], aborted: true };
+  }
+  const useVerified =
+    Boolean(options.verifyComplete) || options.source.length > 800;
+  try {
+    if (useVerified) {
+      const result = await streamVerifiedTranslation(
+        config,
+        system,
+        {
+          source: options.source,
+          promptFor: (piece) => options.promptFor(piece, config),
+        },
+        (delta) => options.onDelta(delta.text),
+        options.onCancelReady,
+        options.stopped,
+        gloss,
+      );
+      if (result.aborted || options.stopped()) {
+        return {
+          ok: false,
+          text: result.text,
+          pieces: result.pieces,
+          model: config.model || undefined,
+          aborted: true,
+        };
+      }
+      if (!result.text.trim()) {
+        return {
+          ok: false,
+          text: "",
+          pieces: [],
+          model: config.model || undefined,
+          error: getString("translate-popup-empty"),
+        };
+      }
+      return {
+        ok: true,
+        text: result.text,
+        pieces: result.pieces.length
+          ? result.pieces
+          : [{ source: options.source, text: result.text }],
+        model: config.model || undefined,
+      };
+    }
+
+    const basePrompt = await options.promptFor(options.source, config);
+    if (options.stopped()) {
+      return { ok: false, text: "", pieces: [], aborted: true };
+    }
+    const asked = gloss
+      ? withGlossary(basePrompt, gloss.match(options.source))
+      : basePrompt;
+    const result = await streamChat(
+      config,
+      [
+        { role: "system", content: system },
+        { role: "user", content: asked },
+      ],
+      (delta) => options.onDelta(delta.text),
+      options.onCancelReady,
+    );
+    if (result.aborted || options.stopped()) {
+      return {
+        ok: false,
+        text: result.text,
+        pieces: [],
+        model: config.model || undefined,
+        aborted: true,
+      };
+    }
+    if (!result.text.trim()) {
+      return {
+        ok: false,
+        text: "",
+        pieces: [],
+        model: config.model || undefined,
+        error: getString("translate-popup-empty"),
+      };
+    }
+    return {
+      ok: true,
+      text: result.text,
+      pieces: [{ source: options.source, text: result.text }],
+      model: config.model || undefined,
+    };
+  } catch (error: any) {
+    if (options.stopped()) {
+      return { ok: false, text: "", pieces: [], aborted: true };
+    }
+    return {
+      ok: false,
+      text: "",
+      pieces: [],
+      model: config.model || undefined,
+      error: error?.message || String(error),
+    };
+  }
+}
+
+/**
+ * Optional second-pass review inside the floating translation popup using the
+ * user's configured review profile + glossary.
+ */
+export async function streamPopupReview(options: {
+  pieces: PopupTranslationPiece[];
+  onDelta: (text: string) => void;
+  onCancelReady: (cancel: () => void) => void;
+  stopped: () => boolean;
+}): Promise<{
+  ok: boolean;
+  text: string;
+  model?: string;
+  aborted?: boolean;
+  error?: string;
+}> {
+  try {
+    const { review } = translationProfiles("review");
+    const gloss = await safeSnapshot();
+    if (options.stopped()) return { ok: false, text: "", aborted: true };
+    const outcome = await streamReview(
+      review,
+      systemFor(review),
+      options.pieces,
+      (delta) => options.onDelta(delta.text),
+      options.onCancelReady,
+      options.stopped,
+      gloss,
+    );
+    if (!outcome.ok) {
+      return {
+        ok: false,
+        text: "",
+        model: review.model || undefined,
+        aborted: outcome.reason === "stopped",
+        error: getString(
+          outcome.reason === "stopped"
+            ? "translation-review-stopped"
+            : "translation-review-failed",
+        ),
+      };
+    }
+    return {
+      ok: true,
+      text: outcome.text,
+      model: review.model || undefined,
+    };
+  } catch (error: any) {
+    if (options.stopped()) return { ok: false, text: "", aborted: true };
+    return {
+      ok: false,
+      text: "",
+      error: error?.message || String(error),
+    };
+  }
 }
 
 export const runner = new Runner();

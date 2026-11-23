@@ -7,7 +7,6 @@
 declare namespace _ZoteroTypes {
   interface Prefs {
     PluginPrefsMap: {
-      "enable": boolean;
       "api.protocol": string;
       "api.url": string;
       "api.urlMode": string;
@@ -29,7 +28,7 @@ declare namespace _ZoteroTypes {
       "chatNumber.enabled": boolean;
       "chat.contextMode": string;
       "reader.popup": boolean;
-      "reader.popupScope": string;
+      "reader.visualOverlay": boolean;
       "tags": string;
       "profiles": string;
       "profiles.active": string;
@@ -39,8 +38,6 @@ declare namespace _ZoteroTypes {
       "markdown.enabled": boolean;
       "markdown.provider": string;
       "markdown.autoOnImport": boolean;
-      "markdown.autoOnChange": boolean;
-      "markdown.concurrency": number;
       "markdown.readContext": boolean;
       "markdown.bundleCleanupDone": boolean;
       "markdown.cloud.endpoint": string;

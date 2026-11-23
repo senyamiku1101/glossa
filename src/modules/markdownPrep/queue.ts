@@ -111,12 +111,6 @@ function mergeRemote(
   };
 }
 
-export type QueueSnapshot = {
-  running: boolean;
-  pending: number;
-  total: number;
-};
-
 const states = new Map<string, PrepState>();
 /** Pending attachment state keys, FIFO. */
 const jobs: string[] = [];
@@ -285,8 +279,32 @@ function resolvePDF(
   }
 }
 
+async function resolvePDFAsync(
+  libraryID: number,
+  attachmentKey: string,
+): Promise<Zotero.Item | undefined> {
+  const cached = resolvePDF(libraryID, attachmentKey);
+  if (cached) return cached;
+  try {
+    const item = await Zotero.Items.getByLibraryAndKeyAsync(
+      libraryID,
+      attachmentKey,
+    );
+    return item && item.isPDFAttachment() ? item : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function rememberItem(item: Zotero.Item, key: string) {
   if (item?.id) itemIDToStateKey.set(item.id, key);
+}
+
+function rememberHosted(
+  attachment: Zotero.Item | undefined,
+  sourceKey: string,
+) {
+  if (attachment?.id) hostedItemIDToSource.set(attachment.id, sourceKey);
 }
 
 function displayTitle(item: Zotero.Item): string {
@@ -348,8 +366,24 @@ export async function initMarkdownQueue(): Promise<void> {
     const recovered = recoverStates(journal.states);
     for (const row of recovered.states) states.set(row.key, row);
     for (const row of recovered.states) {
-      const pdf = resolvePDF(row.libraryID, row.attachmentKey);
+      const pdf = await resolvePDFAsync(row.libraryID, row.attachmentKey);
       if (pdf) rememberItem(pdf, row.key);
+      if (row.hostedAttachmentKey) {
+        try {
+          const hosted =
+            Zotero.Items.getByLibraryAndKey(
+              row.libraryID,
+              row.hostedAttachmentKey,
+            ) ||
+            (await Zotero.Items.getByLibraryAndKeyAsync(
+              row.libraryID,
+              row.hostedAttachmentKey,
+            ));
+          if (hosted) rememberHosted(hosted, row.attachmentKey);
+        } catch {
+          /* Ignore an unreadable attachment during recovery. */
+        }
+      }
     }
     for (const row of recovered.resume) {
       if (!states.has(row.key)) continue;
@@ -386,8 +420,19 @@ export function disposeMarkdownQueue(): void {
     clearTimer(kickTimer);
     kickTimer = undefined;
   }
+  if (publishTimer !== undefined) {
+    clearTimer(publishTimer);
+    publishTimer = undefined;
+  }
+  if (saveTimer !== undefined) {
+    clearTimer(saveTimer);
+    saveTimer = undefined;
+  }
   for (const timer of waitingTimers.values()) clearTimer(timer);
   waitingTimers.clear();
+  waitingAttempts.clear();
+  itemIDToStateKey.clear();
+  hostedItemIDToSource.clear();
   if (running) {
     try {
       running.controller?.abort();
@@ -427,23 +472,8 @@ export function getStateForPDF(attachment: Zotero.Item): PrepState | undefined {
   return states.get(stateKey(attachment.libraryID, attachment.key));
 }
 
-export function getStateByKey(key: string): PrepState | undefined {
-  return states.get(key);
-}
-
 export function isBusy(): boolean {
   return pumping || Boolean(running) || jobs.length > 0;
-}
-
-/** Backwards-compatible clearer alias used by some call sites. */
-export const isQueueBusy = isBusy;
-
-export function getQueueSnapshot(): QueueSnapshot {
-  return {
-    running: Boolean(running),
-    pending: jobs.length,
-    total: states.size,
-  };
 }
 
 /** Resolves as soon as no job is queued or running. */
@@ -632,6 +662,7 @@ async function restoreRowFromPrepared(
   };
   states.set(key, row);
   rememberItem(pdf, key);
+  rememberHosted(prepared.attachment, pdf.key);
   scheduleSave();
   return row;
 }
@@ -660,19 +691,6 @@ function isRowActive(status: PrepStatus): boolean {
     status === "waiting-file" ||
     status === "waiting-config"
   );
-}
-
-export async function enqueueCollection(
-  collection: Zotero.Collection,
-  options: EnqueueOptions = {},
-): Promise<BatchSummary> {
-  let items: Zotero.Item[] = [];
-  try {
-    items = collection.getChildItems();
-  } catch (error) {
-    log("collection read failed", error);
-  }
-  return enqueueItems(items, options);
 }
 
 function findRowFor(itemOrKey: Zotero.Item | string): PrepState | undefined {
@@ -706,7 +724,7 @@ export async function retryItem(
 ): Promise<boolean> {
   const row = findRowFor(itemOrKey);
   if (!row) return false;
-  const pdf = resolvePDF(row.libraryID, row.attachmentKey);
+  const pdf = await resolvePDFAsync(row.libraryID, row.attachmentKey);
   if (!pdf) {
     patchState(row.key, {
       status: "failed",
@@ -719,41 +737,6 @@ export async function retryItem(
     force: options.force,
   });
   return summary.queued > 0;
-}
-
-export async function retryFailed(
-  options: EnqueueOptions = {},
-): Promise<BatchSummary> {
-  if (!initialized) await initMarkdownQueue();
-  const retryable = [...states.values()].filter(
-    (row) =>
-      row.status === "failed" ||
-      row.status === "needs-parser" ||
-      row.status === "cancelled",
-  );
-  const summary: BatchSummary = {
-    total: retryable.length,
-    queued: 0,
-    skipped: 0,
-
-    waitingFile: 0,
-    waitingConfig: 0,
-    failed: 0,
-    noPdf: 0,
-  };
-  for (const row of retryable) {
-    const pdf = resolvePDF(row.libraryID, row.attachmentKey);
-    if (!pdf) {
-      summary.failed += 1;
-      continue;
-    }
-    const one = await enqueueItems([pdf], {
-      force: options.force,
-    });
-    summary.queued += one.queued;
-    summary.skipped += one.skipped;
-  }
-  return summary;
 }
 
 export function cancel(key: string): boolean {
@@ -779,27 +762,6 @@ export function cancel(key: string): boolean {
   return true;
 }
 
-export function cancelAll(): number {
-  let cancelled = 0;
-  for (const row of [...states.values()]) {
-    if (isRowActive(row.status)) {
-      if (row.status !== "waiting-config") {
-        cancel(row.key);
-        cancelled += 1;
-      } else {
-        jobOptions.delete(row.key);
-        patchState(row.key, {
-          status: "cancelled",
-          reason: "cancelled",
-          progress: undefined,
-        });
-        cancelled += 1;
-      }
-    }
-  }
-  return cancelled;
-}
-
 function removeFromJobs(key: string) {
   let index = jobs.indexOf(key);
   while (index >= 0) {
@@ -817,8 +779,6 @@ export function resumePending(): void {
       row.status === "queued" ||
       row.status === "waiting-file"
     ) {
-      const pdf = resolvePDF(row.libraryID, row.attachmentKey);
-      if (!pdf) continue;
       const resumeJobId = resumeJobFor(row, settings);
       jobOptions.set(row.key, {
         automatic: true,
@@ -842,13 +802,16 @@ export function resumePending(): void {
   scheduleKick();
 }
 
-function recoverQueuedRows(): void {
+async function recoverQueuedRows(): Promise<void> {
   if (!initialized || disposed) return;
   let recovered = 0;
-  for (const row of states.values()) {
+  for (const row of [...states.values()]) {
     if (row.status !== "queued") continue;
     if (running?.key === row.key || jobs.includes(row.key)) continue;
-    const pdf = resolvePDF(row.libraryID, row.attachmentKey);
+    const pdf = await resolvePDFAsync(row.libraryID, row.attachmentKey);
+    if (!initialized || disposed) return;
+    if (states.get(row.key)?.status !== "queued") continue;
+    if (running?.key === row.key || jobs.includes(row.key)) continue;
     if (!pdf) {
       patchState(row.key, {
         status: "failed",
@@ -880,7 +843,7 @@ function scheduleKick(delay = 600): void {
   if (kickTimer !== undefined || !initialized || disposed) return;
   const timer = schedule(() => {
     kickTimer = undefined;
-    recoverQueuedRows();
+    void recoverQueuedRows();
   }, delay);
   if (timer !== undefined) kickTimer = timer;
 }
@@ -940,7 +903,7 @@ async function runJobAttempt(key: string, options: JobOptions): Promise<void> {
   if (!row) return;
   if (!isRowActive(row.status)) return;
   const previousStatus = row.status;
-  const pdf = resolvePDF(row.libraryID, row.attachmentKey);
+  const pdf = await resolvePDFAsync(row.libraryID, row.attachmentKey);
   if (!pdf) {
     patchState(key, {
       status: "failed",
@@ -1174,6 +1137,7 @@ async function runJobAttempt(key: string, options: JobOptions): Promise<void> {
     });
     return;
   }
+  rememberHosted(result.attachment, pdf.key);
   patchState(key, {
     status,
     quality: body.quality,
@@ -1181,8 +1145,6 @@ async function runJobAttempt(key: string, options: JobOptions): Promise<void> {
     parserId: body.parserId,
     pageCount: body.source.pageCount,
     hostedAttachmentKey: result.hostedAttachmentKey,
-    hosted: undefined,
-
     remote: mergeRemote(previousRemote, body.remote),
     reason: undefined,
     detail: undefined,
@@ -1250,6 +1212,7 @@ async function promoteCachedBody(
       });
       return;
     }
+    rememberHosted(result.attachment, pdf.key);
     patchState(key, {
       status: entry.meta.status === "partial" ? "partial" : "done",
       quality: qualityFromLevel(entry.meta.quality),
@@ -1257,8 +1220,6 @@ async function promoteCachedBody(
       parserId: entry.meta.parser,
       pageCount: entry.meta.pageCount,
       hostedAttachmentKey: result.hostedAttachmentKey,
-      hosted: undefined,
-
       remote: entry.meta.remote,
       reason: undefined,
       detail: undefined,
@@ -1290,13 +1251,10 @@ function qualityFromLevel(
   };
 }
 async function markWaitingFile(key: string, options: JobOptions) {
-  const row = states.get(key);
-  const attempts = (row?.attempts ?? 0) + 1;
   patchState(key, {
     status: "waiting-file",
     reason: "file-not-downloaded",
     detail: "pdf-file-not-available",
-    attempts,
     progress: undefined,
   });
   const previous = waitingAttempts.get(key) ?? 0;
@@ -1332,7 +1290,7 @@ async function applyParseFailure(
 ) {
   const previous = states.get(key);
   const pdf = previous
-    ? resolvePDF(previous.libraryID, previous.attachmentKey)
+    ? await resolvePDFAsync(previous.libraryID, previous.attachmentKey)
     : undefined;
   let keepOld = false;
   if (previous && hasBody(previousStatus) && pdf) {
@@ -1375,10 +1333,11 @@ function registerNotifier() {
           event: string,
           type: string,
           ids: (number | string)[] | number | string,
+          extraData?: Record<string, any>,
         ) => {
           if (type !== "item") return;
           const items = Array.isArray(ids) ? ids : [ids];
-          void handleItemNotification(event, items.map(Number));
+          void handleItemNotification(event, items.map(Number), extraData);
         },
       },
       ["item"],
@@ -1389,11 +1348,15 @@ function registerNotifier() {
   }
 }
 
-async function handleItemNotification(event: string, ids: number[]) {
+async function handleItemNotification(
+  event: string,
+  ids: number[],
+  extraData?: Record<string, any>,
+) {
   if (!initialized || disposed) return;
   try {
     if (event === "delete") {
-      await handleDeleted(ids);
+      await handleDeleted(ids, extraData);
       return;
     }
     if (event !== "add" && event !== "modify") return;
@@ -1430,7 +1393,6 @@ export async function observeNewPDF(pdf: Zotero.Item) {
 }
 
 async function observeModifiedPDF(pdf: Zotero.Item) {
-  const settings = readSettings();
   const key = stateKey(pdf.libraryID, pdf.key);
   const row = states.get(key);
   if (!row) return;
@@ -1440,7 +1402,7 @@ async function observeModifiedPDF(pdf: Zotero.Item) {
     void pump();
     return;
   }
-  if (!settings.autoOnChange || !row.source || !hasBody(row.status)) return;
+  if (!row.source || !hasBody(row.status)) return;
   let current: SourceFingerprint | undefined;
   try {
     current = await sourceFingerprintFromItem(pdf);
@@ -1462,21 +1424,43 @@ async function observeModifiedPDF(pdf: Zotero.Item) {
   });
 }
 
-async function handleDeleted(ids: number[]) {
+async function handleDeleted(ids: number[], extraData?: Record<string, any>) {
   for (const id of ids) {
-    const stateKeyForItem = itemIDToStateKey.get(id);
+    const extra = extraData?.[id] ?? extraData?.[String(id)];
+    const extraKey =
+      typeof extra?.key === "string"
+        ? extra.key
+        : typeof extra?.old?.key === "string"
+          ? extra.old.key
+          : undefined;
+    const extraLibraryID =
+      typeof extra?.libraryID === "number"
+        ? extra.libraryID
+        : typeof extra?.old?.libraryID === "number"
+          ? extra.old.libraryID
+          : undefined;
+    const stateKeyForItem =
+      itemIDToStateKey.get(id) ??
+      (extraKey && extraLibraryID !== undefined
+        ? states.get(stateKey(extraLibraryID, extraKey))?.key
+        : undefined);
     if (stateKeyForItem) {
       await cleanupDeletedSource(stateKeyForItem);
       continue;
     }
     const sourceKey = hostedItemIDToSource.get(id);
-    if (sourceKey) {
+    hostedItemIDToSource.delete(id);
+    if (sourceKey || extraKey) {
       for (const row of states.values()) {
-        if (row.attachmentKey !== sourceKey) continue;
+        const matchesSource = sourceKey && row.attachmentKey === sourceKey;
+        const matchesHosted =
+          extraKey &&
+          row.hostedAttachmentKey === extraKey &&
+          (extraLibraryID === undefined || row.libraryID === extraLibraryID);
+        if (!matchesSource && !matchesHosted) continue;
         if (row.hostedAttachmentKey) {
           patchState(row.key, {
             hostedAttachmentKey: undefined,
-            hosted: undefined,
             detail: "hosted-body-deleted",
           });
         }
@@ -1493,12 +1477,20 @@ async function cleanupDeletedSource(key: string) {
   for (const [itemID, mapped] of itemIDToStateKey) {
     if (mapped === key) itemIDToStateKey.delete(itemID);
   }
+  for (const [hostedID, sourceKey] of hostedItemIDToSource) {
+    if (sourceKey === row.attachmentKey) hostedItemIDToSource.delete(hostedID);
+  }
   if (row.hostedAttachmentKey) {
     try {
-      const hosted = Zotero.Items.getByLibraryAndKey(
-        row.libraryID,
-        row.hostedAttachmentKey,
-      );
+      const hosted =
+        Zotero.Items.getByLibraryAndKey(
+          row.libraryID,
+          row.hostedAttachmentKey,
+        ) ||
+        (await Zotero.Items.getByLibraryAndKeyAsync(
+          row.libraryID,
+          row.hostedAttachmentKey,
+        ));
       if (hosted) {
         const read = await readHostedAttachment(hosted);
         if (read && read.meta.sourceKey === row.attachmentKey) {
@@ -1554,6 +1546,4 @@ export async function deleteBodyForPDF(pdf: Zotero.Item): Promise<boolean> {
   }
   return deleted;
 }
-export const enqueue = enqueueItems;
-export const retry = retryItem;
 export const collectTargets = collectPDFs;

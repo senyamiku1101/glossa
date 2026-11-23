@@ -1,4 +1,10 @@
 import type { ResolvedConfig } from "../utils/config";
+import {
+  extractContextImages,
+  formatContextItemsForPrompt,
+  type ContextItem,
+} from "../utils/contextTray";
+import type { PromptImage } from "../utils/protocol";
 import { asItem, getActiveReader } from "../utils/reader";
 import {
   cosine,
@@ -42,6 +48,10 @@ export type RenderedPrompt = {
    * `source` is the text itself, never the rendered prompt.
    */
   translationRequest?: { mode: "quick" | "collaborative"; source: string };
+  /** Transient multimodal images attached to this turn's user prompt only. */
+  images?: PromptImage[];
+  /** Optional text-only fallback prompt if a text-only model rejects image payloads. */
+  imageFallbackPrompt?: string;
 };
 
 /**
@@ -84,18 +94,32 @@ export async function renderTemplate(
   config: ResolvedConfig,
   /** The selection as captured by the caller (the reader's popup). */
   selection?: string,
+  /** Optional multi-item context staged in the composer tray (text + images). */
+  attachments?: readonly ContextItem[],
 ): Promise<RenderedPrompt> {
+  const images = attachments?.length ? extractContextImages(attachments) : [];
+  const effectiveSelection = attachments?.length
+    ? formatContextItemsForPrompt(attachments, images.length > 0)
+    : selection;
   const pack = await collectContext(
     template,
     input,
     target,
     config,
     true,
-    selection,
+    effectiveSelection,
   );
+  const prompt = interpolate(template, pack).trim();
+  const compact = interpolate(template, compactPack(pack)).trim();
+  if (!images.length) return { prompt, compact };
+  const fallbackSelection = formatContextItemsForPrompt(attachments!, false);
+  const fallbackPack: ContextPack = { ...pack, selection: fallbackSelection };
+  const imageFallbackPrompt = interpolate(template, fallbackPack).trim();
   return {
-    prompt: interpolate(template, pack).trim(),
-    compact: interpolate(template, compactPack(pack)).trim(),
+    prompt,
+    compact,
+    images,
+    ...(imageFallbackPrompt ? { imageFallbackPrompt } : {}),
   };
 }
 
@@ -138,36 +162,72 @@ export async function renderQuestion(
   mode: ContextMode,
   config: ResolvedConfig,
   selection?: string,
+  attachments?: readonly ContextItem[],
 ): Promise<RenderedPrompt> {
+  const images = attachments?.length ? extractContextImages(attachments) : [];
+  const formattedWithImages = attachments?.length
+    ? formatContextItemsForPrompt(attachments, images.length > 0)
+    : selection?.trim() || "";
+  const formattedFallback = attachments?.length
+    ? formatContextItemsForPrompt(attachments, false)
+    : formattedWithImages;
+  const contextLabel =
+    attachments && (attachments.length > 1 || attachments[0]?.kind !== "text")
+      ? "Selected context:"
+      : "Selected text:";
+
   if (mode === "chat" || !target.item) {
-    const quoted = selection?.trim();
-    if (!quoted) return { prompt: input, compact: input };
-    const body = `Selected text:\n${quoted}\n\nQuestion:\n${input}`;
-    return { prompt: body, compact: body };
+    if (!formattedWithImages && !images.length) {
+      return { prompt: input, compact: input };
+    }
+    const title = String(target.item?.getDisplayTitle() || "").trim();
+    const year = getYear(target.item);
+    const header = title ? `Item: ${title}${year ? ` (${year})` : ""}` : "";
+    const buildBody = (ctx: string) =>
+      [header, ctx && `${contextLabel}\n${ctx}`, `Question:\n${input}`]
+        .filter(Boolean)
+        .join("\n\n");
+    const body = buildBody(formattedWithImages);
+    const fallbackBody = buildBody(formattedFallback);
+    return {
+      prompt: body,
+      compact: fallbackBody,
+      ...(images.length ? { images, imageFallbackPrompt: fallbackBody } : {}),
+    };
   }
   const { key, heading } = QUESTION_CONTEXT[mode];
-  // The question is about the document, so rank the document's passages
-  // even when some text is selected; the selection is quoted separately.
+  // The question explicitly requested document-wide context (either no staged
+  // items with "Use current paper" ON, or staged items with "+ Search full paper" ON).
   const pack = await collectContext(
     `{{${key}}}`,
     input,
     target,
     config,
     false,
-    selection,
+    formattedWithImages,
   );
-  const compose = (source: ContextPack) => {
+  const compose = (source: ContextPack, ctxText: string) => {
     const year = source.year ? ` (${source.year})` : "";
     return [
       `Item: ${source.title}${year}`,
       source[key] && `${heading}\n${source[key]}`,
-      source.selection && `Selected text:\n${source.selection}`,
+      ctxText && `${contextLabel}\n${ctxText}`,
       `Question:\n${source.input}`,
     ]
       .filter(Boolean)
       .join("\n\n");
   };
-  return { prompt: compose(pack), compact: compose(compactPack(pack)) };
+  const prompt = compose(pack, pack.selection);
+  const compact = compose(
+    compactPack(pack),
+    formattedFallback || pack.selection,
+  );
+  const fallbackPrompt = compose(pack, formattedFallback || pack.selection);
+  return {
+    prompt,
+    compact,
+    ...(images.length ? { images, imageFallbackPrompt: fallbackPrompt } : {}),
+  };
 }
 
 async function collectContext(
@@ -179,7 +239,10 @@ async function collectContext(
   selectionOverride?: string,
 ): Promise<ContextPack> {
   const { item } = target;
-  const selection = selectionOverride?.trim() || getPDFSelection();
+  const selection =
+    selectionOverride !== undefined
+      ? selectionOverride.trim()
+      : getPDFSelection();
   const pack: ContextPack = {
     input,
     selection,
@@ -273,16 +336,88 @@ async function getRelatedText(
   return formatChunks(rankByKeywords(chunks, query, k));
 }
 
-function rankByKeywords(chunks: string[], query: string, k: number) {
-  const words = query
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((word) => word.length > 3);
+type KeywordToken = { token: string; bounded: boolean };
+
+function extractKeywords(query: string): KeywordToken[] {
+  const seen = new Set<string>();
+  const out: KeywordToken[] = [];
+  const add = (token: string, bounded: boolean) => {
+    if (!token || seen.has(token)) return;
+    seen.add(token);
+    out.push({ token, bounded });
+  };
+  for (const match of query.matchAll(/[A-Za-z0-9][A-Za-z0-9_-]*/g)) {
+    const raw = match[0];
+    const lower = raw.toLowerCase();
+    if (lower.length > 3) {
+      add(lower, false);
+    } else if (raw.length >= 2 && (/[A-Z]/.test(raw) || /\d/.test(raw))) {
+      // Preserve short technical acronyms/codes such as PDF, CFD, LLM, 3D, v2.
+      add(lower, true);
+    }
+  }
+  const cjkStop = new Set([
+    "的",
+    "了",
+    "是",
+    "在",
+    "和",
+    "与",
+    "及",
+    "或",
+    "把",
+    "被",
+    "对",
+    "中",
+    "有",
+    "这",
+    "那",
+    "个",
+    "吗",
+    "呢",
+    "吧",
+  ]);
+  for (const match of query.matchAll(
+    /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+/gu,
+  )) {
+    const run = [...match[0]].filter((ch) => !cjkStop.has(ch)).join("");
+    if (run.length === 1) {
+      add(run, false);
+    } else {
+      for (let i = 0; i < run.length - 1; i++) {
+        add(run.slice(i, i + 2), false);
+      }
+    }
+  }
+  return out;
+}
+
+export function rankByKeywords(chunks: string[], query: string, k: number) {
+  const keywords = extractKeywords(query);
+  if (!keywords.length) return chunks.slice(0, k);
+  const patterns = keywords.map(({ token, bounded }) =>
+    bounded
+      ? new RegExp(
+          `(?<![a-z0-9_])${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![a-z0-9_])`,
+          "i",
+        )
+      : token,
+  );
   return chunks
-    .map((text) => ({
-      text,
-      score: words.filter((word) => text.toLowerCase().includes(word)).length,
-    }))
+    .map((text) => {
+      const lower = text.toLowerCase();
+      let score = 0;
+      for (const pattern of patterns) {
+        if (
+          typeof pattern === "string"
+            ? lower.includes(pattern)
+            : pattern.test(text)
+        ) {
+          score += 1;
+        }
+      }
+      return { text, score };
+    })
     .sort((a, b) => b.score - a.score)
     .slice(0, k)
     .map((row) => row.text);
@@ -394,9 +529,6 @@ function hostedDocIndex(hosted: ContextBody): DocIndex {
     }
   } else {
     chunks.push(...splitText(body).slice(0, MAX_CHUNKS));
-  }
-  if (chunks.length > MAX_CHUNKS) {
-    ztoolkit.log(`[Glossa] indexing first ${MAX_CHUNKS} prepared chunks`);
   }
   const flat = body.replace(/[ \t]+/g, " ").trim();
   const truncated = flat.length > FULLTEXT_LIMIT;

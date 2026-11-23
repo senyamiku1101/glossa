@@ -1,11 +1,6 @@
 pref-intro = Set up your model, document sources and local workspace in one place. Changes take effect immediately.
-pref-profiles-title = Connections
-pref-profiles-help = Save provider and model settings, then switch between them.
-pref-connection-title = Chat connection
 pref-connection-help = Set the endpoint and key. Enable optional parameters only when your provider supports them.
-pref-retrieval-title = Document sources
 pref-retrieval-help = Embeddings are optional. Keyword matching can still find PDF passages.
-pref-workspace-title = Reading workspace
 pref-workspace-help = Choose what enters a conversation, how much history to send, and reusable research instructions.
 pref-general = General
 pref-profile-save = + Save current settings
@@ -61,18 +56,24 @@ pref-translation-choose-profile = Select a profile
 pref-translation-profile-missing = Profile deleted; select another
 pref-translation-help = Standard translation keeps using the current model. Collaborative translation calls the two profiles in sequence, taking more time and cost; the source and draft are sent to the selected services. Reviewing an existing translation calls only the review profile, and sends the source and that translation to the review service.
 
-# ---- Paper body preparation (PaddleOCR cloud only) ----
+# ---- Paper body preparation ----
 
 pref-tab-markdown = Paper body
 pref-markdown-provider-title = Parser service
 pref-markdown-provider = Parsing engine
+pref-markdown-provider-paddle = PaddleOCR
+pref-markdown-provider-mineru = MinerU
 pref-markdown-get-key = Get API Key ↗
 pref-markdown-token = API Key
 pref-markdown-endpoint = Endpoint
 pref-markdown-base-url = Base URL
 pref-markdown-model = Model
 pref-markdown-model-version = Model version
+pref-markdown-mineru-vlm = VLM
+pref-markdown-mineru-pipeline = Pipeline
 pref-markdown-language = Language
+pref-markdown-lang-ch = Chinese (ch)
+pref-markdown-lang-en = English (en)
 pref-markdown-advanced = Advanced
 pref-markdown-ocr = Force OCR
 pref-markdown-self-hosted = Self-hosted service (allow HTTP)

@@ -5,7 +5,6 @@
  */
 import {
   BODY_SCHEMA_VERSION,
-  BUNDLE_LAYOUT,
   type HostedBodyMeta,
   type SourceFingerprint,
 } from "./types";
@@ -38,7 +37,6 @@ export function serializeBodyMeta(meta: HostedBodyMeta): string {
     assetMode: meta.assetMode,
     ...(meta.remote ? { remote: meta.remote } : {}),
     bodySha1: meta.bodySha1,
-    ...(meta.bundle ? { bundle: meta.bundle } : {}),
   };
   return `${META_PREFIX}${JSON.stringify(payload)}${META_SUFFIX}\n`;
 }
@@ -64,20 +62,6 @@ export function parseBodyMeta(markdown: string): HostedBodyMeta | undefined {
     !["paddleocr-cloud", "mineru-cloud"].includes(value.parser ?? "")
   ) {
     return undefined;
-  }
-  // The bundle block is optional (legacy hosted `.md` bodies have none) and, if
-  // present, must be shaped enough to expose a usable generation.
-  if (value.bundle !== undefined) {
-    const bundle = value.bundle as Record<string, unknown> | null;
-    if (
-      !bundle ||
-      typeof bundle !== "object" ||
-      bundle.layout !== BUNDLE_LAYOUT ||
-      typeof bundle.generation !== "number" ||
-      !Number.isFinite(bundle.generation)
-    ) {
-      return undefined;
-    }
   }
   return value as HostedBodyMeta;
 }

@@ -136,6 +136,10 @@ class PreferencesPane {
   }
 
   private dispose() {
+    if (this.profilesTimer !== undefined) {
+      this.win.clearTimeout(this.profilesTimer);
+      this.profilesTimer = undefined;
+    }
     for (const fn of this.cleanup) fn();
     this.cleanup = [];
     this.stopTests();
@@ -191,14 +195,6 @@ class PreferencesPane {
       }
       value = n;
     }
-    if (
-      key === "reader.popupScope" &&
-      value !== "selection" &&
-      value !== "paragraph"
-    ) {
-      this.sync(key);
-      return;
-    }
     if (control.dataset.validate === "json") {
       const error = this.el("api-extra-error");
       try {
@@ -217,14 +213,7 @@ class PreferencesPane {
 
   private sync(key: string) {
     const value = Zotero.Prefs.get(`${PREFIX}.${key}`, true);
-    const text =
-      key === "reader.popupScope"
-        ? value === "paragraph"
-          ? "paragraph"
-          : "selection"
-        : value === undefined
-          ? ""
-          : String(value);
+    const text = value === undefined ? "" : String(value);
     for (const control of this.controls(key)) {
       if (isCheckbox(control)) control.checked = Boolean(value);
       else if (control.value !== text) control.value = text;

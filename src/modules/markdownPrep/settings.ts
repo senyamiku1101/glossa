@@ -11,27 +11,10 @@ import {
   type ParserId,
 } from "./types";
 
-export const MARKDOWN_PREF_KEYS = {
-  enabled: "markdown.enabled",
-  provider: "markdown.provider",
-  autoOnImport: "markdown.autoOnImport",
-  autoOnChange: "markdown.autoOnChange",
-  concurrency: "markdown.concurrency",
-  readContext: "markdown.readContext",
-  cloudEndpoint: "markdown.cloud.endpoint",
-  cloudModel: "markdown.cloud.model",
-  mineruEndpoint: "markdown.mineru.endpoint",
-  mineruModelVersion: "markdown.mineru.modelVersion",
-  mineruLanguage: "markdown.mineru.language",
-  mineruIsOcr: "markdown.mineru.isOcr",
-  mineruSelfHosted: "markdown.mineru.selfHosted",
-} as const;
 export type MarkdownSettings = {
   enabled: boolean;
   provider: ParserId;
   autoOnImport: boolean;
-  autoOnChange: boolean;
-  concurrency: number;
   readContext: boolean;
   cloud: CloudConfig;
   mineru: MineruConfig;
@@ -67,8 +50,6 @@ export function normalizeSettings(
         ? "mineru-cloud"
         : DEFAULT_PARSER,
     autoOnImport: bool("markdown.autoOnImport", true),
-    autoOnChange: bool("markdown.autoOnChange", true),
-    concurrency: 1,
     readContext: bool("markdown.readContext", true),
     cloud: {
       endpoint: str("markdown.cloud.endpoint", DEFAULT_PADDLE_ENDPOINT),
@@ -123,7 +104,4 @@ export function configVersion(settings: MarkdownSettings): string {
         settings.provider === "mineru-cloud" ? settings.mineru : settings.cloud,
     }),
   );
-}
-export function parserId(): ParserId {
-  return readSettings().provider;
 }

@@ -86,21 +86,9 @@ assert(
   types.PREP_STATUSES.includes("waiting-config"),
 );
 assert(
-  "cache key changes with config",
-  types.cacheKey({
-    md5: "aa",
-    parserId: "paddleocr-cloud",
-    processorVersion: "PP-StructureV3",
-    converterVersion: "1",
-    configVersion: "a",
-  }) !==
-    types.cacheKey({
-      md5: "aa",
-      parserId: "paddleocr-cloud",
-      processorVersion: "PP-StructureV3",
-      converterVersion: "1",
-      configVersion: "b",
-    }),
+  "stableHash changes with config",
+  types.stableHash("paddleocr-cloud|PP-StructureV3|a") !==
+    types.stableHash("paddleocr-cloud|PP-StructureV3|b"),
 );
 
 // ---- source registry ----
@@ -298,9 +286,33 @@ assert(
 );
 equal("table preserved flag", converted.body.quality.tables, "preserved");
 equal("equation latex flag", converted.body.quality.equations, "latex");
-assert("partial due to structural loss", converted.judgement.status === "done");
-equal("partial level medium", converted.body.quality.level, "medium");
+equal("preserved structure is done", converted.judgement.status, "done");
+equal("preserved structure level high", converted.body.quality.level, "high");
 assert("ocr text layer", converted.body.quality.textLayer === "ocr");
+
+const lostTable = quality.judgeQuality({
+  parserId: "paddleocr-cloud",
+  textChars: 1200,
+  totalPages: 2,
+  parsedPages: 2,
+  emptyPages: 0,
+  unverifiedBlockPages: 0,
+  structuralPages: 1,
+  hasTableBlocks: true,
+  hasEquationBlocks: false,
+  tablesPreserved: false,
+  equationsLatex: false,
+  hasImages: false,
+  assetsDeclared: 0,
+  assetsResolved: 0,
+  truncated: false,
+});
+equal("flattened table stays done", lostTable.status, "done");
+equal("flattened table level medium", lostTable.quality.level, "medium");
+assert(
+  "flattened table caveat",
+  lostTable.quality.caveats.includes("table-cells-unverified"),
+);
 
 const hosted = assets.planHostedBody(converted.body);
 assert("converted asset embedded", hosted.resolved >= 1);
@@ -407,7 +419,7 @@ assert(
   "missing ref caveat",
   unresolved.body.warnings.includes("asset-missing"),
 );
-assert("missing ref partial", unresolved.judgement.status === "done");
+assert("missing ref partial", unresolved.judgement.status === "partial");
 
 // More active HTML hardening: unquoted JS URLs, meta/link tags, data:text/html.
 const hardened = paddle.convertPaddleJsonl({
@@ -478,7 +490,10 @@ assert(
   "unknown page count caveat",
   unknownOrder.body.warnings.includes("page-order-unverified"),
 );
-assert("unknown page count partial", unknownOrder.judgement.status === "done");
+assert(
+  "unknown page count partial",
+  unknownOrder.judgement.status === "partial",
+);
 
 // Short legal document: non-empty one-pager must not be rejected by length.
 const shortDoc = quality.judgeQuality({
@@ -536,7 +551,7 @@ const truncated = paddle.convertPaddleJsonl({
 });
 assert(
   "fewer pages than PDF is partial",
-  truncated.judgement.status === "done",
+  truncated.judgement.status === "partial",
 );
 assert("truncated caveat", truncated.body.warnings.includes("partial-pages"));
 
@@ -568,7 +583,7 @@ const missingPage = paddle.convertPaddleJsonl({
   source: { ...sourceFingerprint, pageCount: 4 },
   model: "PP-StructureV3",
 });
-assert("missing pages are partial", missingPage.judgement.status === "done");
+assert("missing pages are partial", missingPage.judgement.status === "partial");
 assert(
   "missing pages caveat",
   missingPage.body.quality.caveats.includes("partial-pages"),

@@ -210,6 +210,7 @@ function collectLatin(
 }
 
 function collectTrie(folded: string, root: TrieNode, hits: Hit[]) {
+  if (!root.kids.size) return;
   for (let start = 0; start < folded.length; start++) {
     let node = root;
     let i = start;

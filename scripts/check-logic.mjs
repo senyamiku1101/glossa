@@ -48,6 +48,14 @@ const {
 const { parseInline, parseMarkdown, texToParts } = await load(
   "src/utils/markdown.ts",
 );
+const {
+  MAX_CONTEXT_ITEMS,
+  addContextItem,
+  extractContextImages,
+  formatContextItemsForPrompt,
+  removeContextItem,
+  summarizeContextItems,
+} = await load("src/utils/contextTray.ts");
 
 const asserts = [];
 function assert(name, cond) {
@@ -483,7 +491,11 @@ assert(
   parseFinalBody(
     "openai-chat",
     '{"choices":[{"message":{"content":"yo","reasoning_content":"r"}}]}',
-  ).text === "yo",
+  ).text === "yo" &&
+    parseFinalBody(
+      "openai-chat",
+      '{"choices":[{"message":{"content":"yo","reasoning":"r2"}}]}',
+    ).reasoning === "r2",
 );
 const resFinal = parseFinalBody(
   "openai-responses",
@@ -789,7 +801,24 @@ assert(
 );
 assert(
   "dollar amounts are not math",
-  inlineTypes(parseInline("costs $5 and $10 today")) === "text",
+  inlineTypes(parseInline("costs $5 and $10 today")) === "text" &&
+    inlineTypes(parseInline("from $5 million to $10 million")) === "text",
+);
+assert(
+  "spaced OCR/LLM inline math parses cleanly",
+  (() => {
+    const nodes = parseInline(
+      "管道周边马赫数的比例变化由参数 $ \\epsilon $ 给出，$ \\epsilon $ 即为马赫数的周向变化量 $ \\Delta M $ 与平均值 $ \\bar{M} $ 之比",
+    );
+    const maths = nodes.filter((n) => n.type === "math").map((n) => n.text);
+    return (
+      maths.length === 4 &&
+      maths[0] === "\\epsilon" &&
+      maths[1] === "\\epsilon" &&
+      maths[2] === "\\Delta M" &&
+      maths[3] === "\\bar{M}"
+    );
+  })(),
 );
 assert(
   "LaTeX delimiters",
@@ -847,6 +876,195 @@ assert(
       { text: " + y" },
       { text: "i", script: "sub" },
     ]),
+);
+assert(
+  "texToParts accents and Greek symbols",
+  texToParts("\\epsilon")[0].text === "ε" &&
+    texToParts("\\Delta M")[0].text === "Δ M" &&
+    texToParts("\\bar{M}")[0].text === "M\u0304" &&
+    texToParts("\\bar M")[0].text === "M\u0304" &&
+    texToParts("\\hat{p}")[0].text === "p\u0302" &&
+    texToParts("\\widehat{\\Phi'''}")[0].text === "Φ\u0302'''",
+);
+
+// ---- multimodal buildChatRequest across all 3 protocols ----
+const mmImage = { mimeType: "image/png", data: "QUJD" };
+const mmMessages = [
+  { role: "system", content: "sys" },
+  { role: "user", content: "explain fig", images: [mmImage] },
+];
+const mmOpenAi = JSON.parse(
+  buildChatRequest(
+    {
+      ...DEFAULT_CONFIG,
+      protocol: "openai-chat",
+      keys: { api: "k", embed: "" },
+    },
+    mmMessages,
+  ).body,
+);
+assert(
+  "openai-chat multimodal image_url",
+  Array.isArray(mmOpenAi.messages[1].content) &&
+    mmOpenAi.messages[1].content[0].type === "text" &&
+    mmOpenAi.messages[1].content[1].type === "image_url" &&
+    mmOpenAi.messages[1].content[1].image_url.url ===
+      "data:image/png;base64,QUJD",
+);
+const mmResponses = JSON.parse(
+  buildChatRequest(
+    {
+      ...DEFAULT_CONFIG,
+      protocol: "openai-responses",
+      keys: { api: "k", embed: "" },
+    },
+    mmMessages,
+  ).body,
+);
+assert(
+  "openai-responses multimodal input_image",
+  Array.isArray(mmResponses.input[0].content) &&
+    mmResponses.input[0].content[0].type === "input_text" &&
+    mmResponses.input[0].content[1].type === "input_image" &&
+    mmResponses.input[0].content[1].image_url === "data:image/png;base64,QUJD",
+);
+const mmAnthropic = JSON.parse(
+  buildChatRequest(
+    {
+      ...DEFAULT_CONFIG,
+      protocol: "anthropic-messages",
+      keys: { api: "k", embed: "" },
+    },
+    mmMessages,
+  ).body,
+);
+assert(
+  "anthropic-messages multimodal image block",
+  Array.isArray(mmAnthropic.messages[0].content) &&
+    mmAnthropic.messages[0].content[0].type === "image" &&
+    mmAnthropic.messages[0].content[0].source.media_type === "image/png" &&
+    mmAnthropic.messages[0].content[0].source.data === "QUJD" &&
+    mmAnthropic.messages[0].content[1].type === "text",
+);
+const plainOpenAi = JSON.parse(
+  buildChatRequest(
+    {
+      ...DEFAULT_CONFIG,
+      protocol: "openai-chat",
+      keys: { api: "k", embed: "" },
+    },
+    [{ role: "user", content: "hello" }],
+  ).body,
+);
+assert(
+  "text-only message stays plain string content",
+  plainOpenAi.messages[0].content === "hello",
+);
+
+// ---- contextTray.ts (multi-context workbench) ----
+let tray = [];
+const add1 = addContextItem(tray, {
+  kind: "text",
+  text: "First selected excerpt about body force modeling.",
+  page: 4,
+});
+tray = add1.items;
+assert("contextTray adds first text item", add1.added && tray.length === 1);
+
+const addDup = addContextItem(tray, {
+  kind: "text",
+  text: "  First selected   excerpt about body force modeling. ",
+  page: 4,
+});
+assert(
+  "contextTray deduplicates normalized whitespace repeats",
+  !addDup.added && addDup.duplicate && addDup.items.length === 1,
+);
+
+const addEmpty = addContextItem(tray, { kind: "text", text: "   " });
+assert(
+  "contextTray rejects empty items",
+  !addEmpty.added && !addEmpty.duplicate && addEmpty.items.length === 1,
+);
+
+assert(
+  "contextTray single plain text formats cleanly without headers",
+  formatContextItemsForPrompt(tray, true) ===
+    "First selected excerpt about body force modeling.",
+);
+
+const figImg = { mimeType: "image/png", data: "iVBORw0KGgoAAAANSUhEUg==" };
+const add2 = addContextItem(tray, {
+  kind: "figure",
+  text: "![Fig 3](images/fig3.png)",
+  caption: "Fig. 3. Total pressure ratio across span.",
+  page: 7,
+  image: figImg,
+});
+tray = add2.items;
+const add3 = addContextItem(tray, {
+  kind: "equation",
+  text: "$$\\nabla \\cdot (\\rho \\mathbf{u}) = 0$$",
+  page: 5,
+  comment: "Check boundary assumptions",
+});
+tray = add3.items;
+assert(
+  "contextTray supports mixed multi-item text + figure + equation",
+  tray.length === 3 && extractContextImages(tray).length === 1,
+);
+
+const visionPrompt = formatContextItemsForPrompt(tray, true);
+const fallbackPrompt = formatContextItemsForPrompt(tray, false);
+assert(
+  "contextTray formats numbered multimodal blocks with captions and notes",
+  visionPrompt.includes("[1] Text · p. 4") &&
+    visionPrompt.includes("[2] Figure · p. 7 · attached image #1") &&
+    visionPrompt.includes(
+      "Caption: Fig. 3. Total pressure ratio across span.",
+    ) &&
+    visionPrompt.includes("[3] Equation · p. 5") &&
+    visionPrompt.includes("Reader note: Check boundary assumptions"),
+);
+assert(
+  "contextTray text-only fallback marks omitted image",
+  fallbackPrompt.includes("image omitted in text-only fallback") &&
+    !fallbackPrompt.includes("attached image #1"),
+);
+
+const summaryLabels = {
+  text: "文本",
+  figure: "图片",
+  table: "表格",
+  equation: "公式",
+};
+assert(
+  "contextTray summary joins mixed items compactly",
+  summarizeContextItems(tray, summaryLabels) ===
+    "[文本(p.4) + 图片(p.7) + 公式(p.5)]",
+);
+assert(
+  "contextTray removes individual item by id",
+  removeContextItem(tray, tray[1].id).length === 2 &&
+    extractContextImages(removeContextItem(tray, tray[1].id)).length === 0,
+);
+
+let capped = [];
+for (let i = 1; i <= MAX_CONTEXT_ITEMS + 3; i++) {
+  capped = addContextItem(capped, {
+    kind: "text",
+    text: `Excerpt number ${i}`,
+    page: i,
+  }).items;
+}
+assert(
+  "contextTray caps length to MAX_CONTEXT_ITEMS keeping newest",
+  capped.length === MAX_CONTEXT_ITEMS &&
+    capped[0].text === "Excerpt number 4" &&
+    capped.at(-1).text === `Excerpt number ${MAX_CONTEXT_ITEMS + 3}` &&
+    summarizeContextItems(capped, summaryLabels).endsWith(
+      ` +${MAX_CONTEXT_ITEMS - 3}]`,
+    ),
 );
 
 const failed = asserts.filter((row) => !row.ok);

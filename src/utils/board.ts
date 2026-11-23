@@ -7,7 +7,7 @@ export const BOARD_LIMIT = 50;
 export const BOARD_TRANSLATION_LIMIT = 20000;
 export const BOARD_SOURCE_LIMIT = 10000;
 
-export type BoardMode = "quick" | "collaborative" | "review";
+export type BoardMode = "note" | "quick" | "collaborative" | "review";
 export type BoardStatus =
   "draft" | "reviewed" | "review-failed" | "stopped" | "incomplete";
 
@@ -63,7 +63,7 @@ const BOARD_TITLE_LIMIT = 500;
 /** Model ids are short; the cap keeps a hostile value from bloating a file. */
 const BOARD_MODEL_LIMIT = 200;
 
-const MODES = new Set<BoardMode>(["quick", "collaborative", "review"]);
+const MODES = new Set<BoardMode>(["note", "quick", "collaborative", "review"]);
 const STATUSES = new Set<BoardStatus>([
   "draft",
   "reviewed",

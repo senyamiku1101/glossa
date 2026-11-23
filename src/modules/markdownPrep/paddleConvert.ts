@@ -37,6 +37,8 @@ export type PaddlePage = {
   assets: BodyAsset[];
   /** Printed page label when the service provides one. */
   pageLabel?: string;
+  /** Rendered page pixel size `[widthPx, heightPx]` when reported. */
+  pageSize?: [number, number];
 };
 
 export type NormalizePaddleOptions = {
@@ -58,6 +60,8 @@ export type ConvertPaddleInput = {
    * in the Markdown to the matching page asset.
    */
   assets?: BodyAsset[];
+  /** Per-page rendered pixel sizes `[widthPx, heightPx]` from poll `dataInfo`. */
+  pageSizes?: Array<[number, number] | undefined>;
   /** Real PDF page count; needed to detect missing/truncated service pages. */
   expectedPages?: number;
   /** The adapter applied pageRanges/limits; never report done silently. */
@@ -88,15 +92,27 @@ const LABEL_KIND: Record<string, BlockType> = {
   subtitle: "heading",
   text: "paragraph",
   paragraph: "paragraph",
+  abstract: "paragraph",
+  caption: "caption",
+  figure_title: "caption",
+  table_title: "caption",
+  figure_caption: "caption",
+  image_caption: "caption",
+  table_caption: "caption",
+  chart_caption: "caption",
   table: "table",
   equation: "equation",
   formula: "equation",
+  display_formula: "equation",
+  inline_formula: "equation",
+  interline_equation: "equation",
   image: "image",
   figure: "image",
   chart: "image",
   list: "list",
   blockquote: "blockquote",
   code: "preformatted",
+  algorithm: "preformatted",
   note: "note",
   footnote: "note",
 };
@@ -129,8 +145,10 @@ export function normalizePaddleJsonl(
       asArray(result.pages) ||
       asArray(value.layoutParsingResults);
     const pageValues = list || (isPageLike(value) ? [value] : []);
-    for (const pageValue of pageValues) {
-      const page = asRecord(pageValue);
+    const lineDataInfo = asRecord(result.dataInfo) || asRecord(value.dataInfo);
+    const infoPages = asArray(lineDataInfo?.pages);
+    for (let localIndex = 0; localIndex < pageValues.length; localIndex++) {
+      const page = asRecord(pageValues[localIndex]);
       if (!page) continue;
       const pageIndex = pages.length;
       const blocks = normalizeBlocks(page, pageIndex);
@@ -140,12 +158,20 @@ export function normalizePaddleJsonl(
           .map((block) => block.text)
           .filter(Boolean)
           .join("\n\n");
+      const pageSize = detectPageSize(
+        page,
+        lineDataInfo,
+        infoPages,
+        pageIndex,
+        localIndex,
+      );
       pages.push({
         pageIndex,
         markdown,
         blocks,
         assets: normalizeAssets(page, pageIndex, options, blocks),
         pageLabel: pageLabel(page),
+        ...(pageSize ? { pageSize } : {}),
       });
     }
   }
@@ -165,6 +191,8 @@ export function convertPaddleJsonl(
   let emptyPages = 0;
   let parsedPages = 0;
   const structuralPages = new Set<number>();
+  let hasTableBlocks = false;
+  let hasEquationBlocks = false;
   let hasImages = false;
 
   // D downloads image URLs; inline base64 (rare) is handled above. Rewrite
@@ -201,35 +229,76 @@ export function convertPaddleJsonl(
     if (!usable.some((block) => block.bbox)) unverifiedBlockPages += 1;
 
     let cursor = 0;
+    const pageAliases =
+      resolvedAliases.byPage.get(page.pageIndex) || emptyAliases;
+    const pageSize = input.pageSizes?.[page.pageIndex] ?? page.pageSize;
+    const pageFigureAssets = allAssets
+      .filter(
+        (asset) =>
+          asset.pageIndex === page.pageIndex && asset.kind === "figure",
+      )
+      .map((asset) => asset.filename);
+    const usedFigureAssets = new Set<string>();
+    const imageBlockCount = usable.filter((b) => b.kind === "image").length;
     for (const block of usable) {
-      if (block.kind === "table" || block.kind === "equation") {
+      if (block.kind === "table") {
         structuralPages.add(page.pageIndex);
-      }
-      if (block.kind === "image") {
+        hasTableBlocks = true;
+      } else if (block.kind === "equation") {
         structuralPages.add(page.pageIndex);
+        hasEquationBlocks = true;
+      } else if (block.kind === "image") {
         hasImages = true;
       }
-      const text = block.text.trim();
-      let start = pageStart;
-      let end = pageStart + pageBody.length;
-      if (text) {
-        const found = pageBody.indexOf(text, Math.max(0, cursor));
+      const rawText = block.text.trim();
+      const rewrittenText = rawText
+        ? sanitizeProviderMarkdown(rewriteImageRefs(rawText, pageAliases))
+        : "";
+      let start = pageStart + cursor;
+      let end = start;
+      for (const candidate of [rewrittenText, rawText]) {
+        if (!candidate) continue;
+        const found = pageBody.indexOf(candidate, Math.max(0, cursor));
         if (found >= 0) {
           start = pageStart + found;
-          end = start + text.length;
-          cursor = found + text.length;
+          end = start + candidate.length;
+          cursor = found + candidate.length;
+          break;
         }
       }
+      let assetPath: string | undefined;
+      if (block.kind === "image" || block.kind === "table") {
+        for (const ref of collectImageRefs(rewrittenText)) {
+          const safe = safeRelativePath(ref);
+          if (safe && allAssets.some((a) => a.filename === safe)) {
+            assetPath = safe;
+            usedFigureAssets.add(safe);
+            break;
+          }
+        }
+        if (
+          !assetPath &&
+          block.kind === "image" &&
+          imageBlockCount === 1 &&
+          pageFigureAssets.length === 1 &&
+          !usedFigureAssets.has(pageFigureAssets[0])
+        ) {
+          assetPath = pageFigureAssets[0];
+          usedFigureAssets.add(assetPath);
+        }
+      }
+      const rectInfo = buildPaddleBlockRect(
+        page.pageIndex,
+        block.bbox,
+        pageSize,
+      );
       blocks.push({
         type: block.kind,
         pageIndex: page.pageIndex,
         ...(page.pageLabel ? { pageLabel: page.pageLabel } : {}),
-        ...(block.bbox && block.bbox.length === 4
-          ? {
-              pageRects: [[page.pageIndex, ...block.bbox]],
-              pageRectsSpace: "service-pixels" as const,
-            }
-          : {}),
+        ...rectInfo,
+        ...(rewrittenText ? { text: rewrittenText } : {}),
+        ...(assetPath ? { assetPath } : {}),
         mdStart: start,
         mdEnd: Math.max(start, end),
       });
@@ -247,15 +316,6 @@ export function convertPaddleJsonl(
 
   const assets = allAssets;
   const imageStats = countImageReferences(markdown, assets);
-  const imageBlocks = pages.reduce(
-    (count, page) =>
-      count + page.blocks.filter((block) => block.kind === "image").length,
-    0,
-  );
-  const declared = Math.max(
-    imageStats.declared,
-    imageBlocks > 0 ? imageBlocks : 0,
-  );
   const totalPages = Math.max(
     input.expectedPages || 0,
     input.source.pageCount,
@@ -296,10 +356,12 @@ export function convertPaddleJsonl(
     emptyPages,
     unverifiedBlockPages,
     structuralPages: structuralPages.size,
+    hasTableBlocks,
+    hasEquationBlocks,
     tablesPreserved,
     equationsLatex,
     hasImages: hasImages || assets.length > 0 || imageStats.declared > 0,
-    assetsDeclared: declared,
+    assetsDeclared: imageStats.declared,
     assetsResolved: imageStats.resolved,
     truncated: Boolean(input.truncated),
     warnings: [...warnings],
@@ -778,6 +840,130 @@ function normalizeBBox(value: unknown): number[] | undefined {
     result.push(item);
   }
   return result;
+}
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function positiveSize(
+  width: unknown,
+  height: unknown,
+): [number, number] | undefined {
+  const w = typeof width === "number" ? width : Number(width);
+  const h = typeof height === "number" ? height : Number(height);
+  if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
+    return [w, h];
+  }
+  return undefined;
+}
+
+function sizeFromRecord(
+  record: Record<string, unknown> | undefined,
+): [number, number] | undefined {
+  if (!record) return undefined;
+  return positiveSize(
+    record.width ?? record.pageWidth ?? record.imageWidth,
+    record.height ?? record.pageHeight ?? record.imageHeight,
+  );
+}
+
+/** Read JPEG SOF0-SOF15 or PNG IHDR pixel dimensions from decoded image bytes. */
+function imageDimensionsFromBytes(
+  bytes: Uint8Array,
+): [number, number] | undefined {
+  if (
+    bytes.length >= 24 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47
+  ) {
+    const w =
+      ((bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19]) >>>
+      0;
+    const h =
+      ((bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23]) >>>
+      0;
+    return positiveSize(w, h);
+  }
+  if (bytes.length >= 11 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+    let i = 2;
+    while (i + 4 < bytes.length) {
+      if (bytes[i] !== 0xff) return undefined;
+      const marker = bytes[i + 1];
+      if (
+        marker >= 0xc0 &&
+        marker <= 0xcf &&
+        marker !== 0xc4 &&
+        marker !== 0xc8 &&
+        marker !== 0xcc
+      ) {
+        if (i + 8 < bytes.length) {
+          const h = (bytes[i + 5] << 8) | bytes[i + 6];
+          const w = (bytes[i + 7] << 8) | bytes[i + 8];
+          return positiveSize(w, h);
+        }
+        return undefined;
+      }
+      if (marker === 0xd9) return undefined;
+      if (marker === 0xd8 || (marker >= 0xd0 && marker <= 0xd7)) {
+        i += 2;
+        continue;
+      }
+      const len = (bytes[i + 2] << 8) | bytes[i + 3];
+      if (len < 2) return undefined;
+      i += 2 + len;
+    }
+  }
+  return undefined;
+}
+
+function detectPageSize(
+  page: Record<string, unknown>,
+  lineDataInfo: Record<string, unknown> | undefined,
+  infoPages: unknown[] | undefined,
+  pageIndex: number,
+  localIndex: number,
+): [number, number] | undefined {
+  const fromInfoPages =
+    sizeFromRecord(asRecord(infoPages?.[pageIndex])) ||
+    sizeFromRecord(asRecord(infoPages?.[localIndex]));
+  if (fromInfoPages) return fromInfoPages;
+  const fromDirect =
+    sizeFromRecord(asRecord(page.prunedResult)) ||
+    sizeFromRecord(page) ||
+    sizeFromRecord(lineDataInfo);
+  if (fromDirect) return fromDirect;
+  const decoded = decodeImagePayload(page.inputImage);
+  if (decoded) return imageDimensionsFromBytes(decoded.bytes);
+  return undefined;
+}
+
+function buildPaddleBlockRect(
+  pageIndex: number,
+  bbox: number[] | undefined,
+  pageSize: [number, number] | undefined,
+): Pick<BlockLoc, "pageRects" | "pageRectsSpace" | "pageSize"> {
+  if (!bbox || bbox.length !== 4) return {};
+  if (pageSize && pageSize[0] > 0 && pageSize[1] > 0) {
+    const nx1 = clamp01(Math.min(bbox[0], bbox[2]) / pageSize[0]);
+    const ny1 = clamp01(Math.min(bbox[1], bbox[3]) / pageSize[1]);
+    const nx2 = clamp01(Math.max(bbox[0], bbox[2]) / pageSize[0]);
+    const ny2 = clamp01(Math.max(bbox[1], bbox[3]) / pageSize[1]);
+    if (nx2 > nx1 && ny2 > ny1) {
+      return {
+        pageRects: [[pageIndex, nx1, ny1, nx2, ny2]],
+        pageRectsSpace: "page-fraction",
+        pageSize,
+      };
+    }
+  }
+  return {
+    pageRects: [[pageIndex, ...bbox]],
+    pageRectsSpace: "service-pixels",
+    ...(pageSize ? { pageSize } : {}),
+  };
 }
 
 function pageLabel(page: Record<string, unknown>): string | undefined {

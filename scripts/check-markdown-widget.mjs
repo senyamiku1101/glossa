@@ -99,7 +99,22 @@ const widget = module.exports.createBackgroundTasksWidget(win);
 const [trigger, panel] = widget.root.children;
 const [header, list] = panel.children;
 assert(panel.hidden);
+let stoppedWhenHidden = false;
+widget.root.onkeydown({
+  key: "Escape",
+  stopPropagation: () => (stoppedWhenHidden = true),
+});
+assert(!stoppedWhenHidden);
 assert.equal(list.children[0].textContent, "暂无后台任务");
+trigger.onclick();
+assert(!panel.hidden);
+let stoppedWhenOpen = false;
+widget.root.onkeydown({
+  key: "Escape",
+  stopPropagation: () => (stoppedWhenOpen = true),
+});
+assert(stoppedWhenOpen);
+assert(panel.hidden);
 trigger.onclick();
 assert(!panel.hidden);
 assert.equal(trigger.attrs["aria-expanded"], "true");
@@ -140,6 +155,67 @@ assert(unsubscribed);
 assert(widget.root.removed);
 assert.equal(timers.size, 0);
 assert(!doc.listeners.pointerdown);
+
+// Toolbar mode: mounts trigger inside `#zotero-items-toolbar` right before the
+// Quick Search box and portals the popover panel to `documentElement`.
+const rootEl = new Element("window");
+const searchBox = new Element("search-textbox");
+searchBox.id = "zotero-tb-search";
+const itemsToolbar = new Element("hbox");
+itemsToolbar.id = "zotero-items-toolbar";
+itemsToolbar.append(searchBox);
+itemsToolbar.insertBefore = (node, ref) => {
+  const idx = itemsToolbar.children.indexOf(ref);
+  if (idx >= 0) itemsToolbar.children.splice(idx, 0, node);
+  else itemsToolbar.children.push(node);
+  node.parent = itemsToolbar;
+  node.parentNode = itemsToolbar;
+};
+itemsToolbar.querySelector = (sel) =>
+  sel === "#zotero-tb-search" ? searchBox : null;
+searchBox.parentNode = itemsToolbar;
+
+const tbDoc = new Element("document");
+tbDoc.documentElement = rootEl;
+tbDoc.createElementNS = (_, tag) => {
+  const el = new Element(tag);
+  el.style = {};
+  el.getBoundingClientRect = () => ({ right: 500, bottom: 40 });
+  return el;
+};
+tbDoc.getElementById = (id) =>
+  id === "zotero-items-toolbar" ? itemsToolbar : null;
+tbDoc.activeElement = null;
+const tbWin = {
+  document: tbDoc,
+  innerWidth: 1200,
+  addEventListener: () => {},
+  removeEventListener: () => {},
+  setTimeout: (fn, delay) => {
+    timers.set(++timer, { fn, delay });
+    return timer;
+  },
+  clearTimeout: (id) => timers.delete(id),
+};
+const tbWidget = module.exports.createBackgroundTasksWidget(tbWin, {
+  mode: "toolbar",
+});
+assert.equal(
+  tbWidget.root.className,
+  "glossa-bgtasks-root glossa-bgtasks-toolbar",
+);
+assert.equal(tbWidget.root.children.length, 1);
+assert.equal(rootEl.children.length, 1);
+const [tbTrigger] = tbWidget.root.children;
+const [tbPanel] = rootEl.children;
+assert.equal(tbPanel.hidden, true);
+tbTrigger.onclick();
+assert.equal(tbPanel.hidden, false);
+assert.equal(tbPanel.style.top, "46px");
+tbWidget.dispose();
+assert(tbWidget.root.removed);
+assert(tbPanel.removed);
+
 console.log(
-  "Widget checks passed: empty, toggle, hover debounce, progress, cancel, retry, clear, status indicators, idempotent disposal.",
+  "Widget checks passed: empty, toggle, hover debounce, progress, cancel, retry, clear, status indicators, toolbar popover mode, idempotent disposal.",
 );

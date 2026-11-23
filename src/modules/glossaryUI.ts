@@ -1,11 +1,11 @@
-import { config } from "../../package.json";
+import { glossaryKey } from "../utils/glossary";
 import { getString } from "../utils/locale";
+import { ensureStylesheet } from "../utils/stylesheet";
 import { glossary, type GlossaryTerm } from "./glossary";
 
 const MAX_SOURCE = 200;
 const MAX_TARGET = 500;
 const LIST_LIMIT = 100;
-const STYLESHEET = `chrome://${config.addonRef}/content/zoteroPane.css`;
 
 /** Dialog windows still open, so addon shutdown can close them. */
 const openWindows = new Set<Window>();
@@ -167,7 +167,7 @@ async function openEditorDialog(options: GlossaryEditorOptions = {}) {
     .setDialogData({
       loadCallback: () => {
         const doc = dialog.window.document;
-        ensureStylesheet(doc);
+        ensureStylesheet(dialog.window);
         doc.addEventListener("keydown", (event) => {
           const key = event as KeyboardEvent;
           // Leave an IME candidate window and an in-flight save alone.
@@ -218,9 +218,13 @@ async function openEditorDialog(options: GlossaryEditorOptions = {}) {
     }
     const buttons = [...doc.querySelectorAll<HTMLButtonElement>("button")];
     try {
-      // Renaming onto another existing key would silently overwrite it.
+      // Renaming onto another existing key would silently overwrite it;
+      // changing only case/spacing of the current term keeps the same key.
       const clash = glossary.find(source);
-      if (clash && (!known || clash.source !== known.source)) {
+      if (
+        clash &&
+        (!known || glossaryKey(clash.source) !== glossaryKey(known.source))
+      ) {
         status.textContent = getString("glossary-conflict");
         return;
       }
@@ -292,7 +296,7 @@ function openManagerDialog() {
     .setDialogData({
       loadCallback: () => {
         const doc = dialog.window.document;
-        ensureStylesheet(doc);
+        ensureStylesheet(dialog.window);
         doc.addEventListener("keydown", (event) => {
           if ((event as KeyboardEvent).key !== "Escape") return;
           event.preventDefault();
@@ -450,20 +454,6 @@ function openManagerDialog() {
     }
     // A successful remove notifies subscribers, which re-renders the list.
   }
-}
-
-/** The dialog window ships without the addon stylesheet; link ours in. */
-function ensureStylesheet(doc: Document) {
-  if (doc.getElementById("glossa-glossary-stylesheet")) return;
-  const link = doc.createElementNS(
-    "http://www.w3.org/1999/xhtml",
-    "link",
-  ) as HTMLLinkElement;
-  link.id = "glossa-glossary-stylesheet";
-  link.rel = "stylesheet";
-  link.type = "text/css";
-  link.href = STYLESHEET;
-  (doc.head || doc.documentElement)?.appendChild(link);
 }
 
 /** Core errors already carry a localized message; keep unknown ones generic. */

@@ -373,6 +373,48 @@ function probeWindow(
   return { win, doc };
 }
 
+/**
+ * Read only the PDF page's `viewBox` (`[x0, y0, x1, y1]` in PDF points) from
+ * Zotero's reader views, staying inside the same Xray-safe cache/window rules.
+ */
+export async function getPdfPageViewBox(
+  reader: _ZoteroTypes.ReaderInstance,
+  pageIndex: number | undefined,
+): Promise<number[] | undefined> {
+  if (pageIndex === undefined || pageIndex < 0 || !Number.isInteger(pageIndex))
+    return undefined;
+  const internal = safe(() => reader._internalReader) || reader;
+  const views = [
+    safe(() => internal._lastView),
+    safe(() => internal._primaryView),
+    safe(() => internal._secondaryView),
+  ];
+  const visited = new Set<RuntimePDFView>();
+  for (const rawView of views) {
+    if (!rawView) continue;
+    const view = rawView as unknown as RuntimePDFView;
+    if (visited.has(view)) continue;
+    visited.add(view);
+    const cached = safe(() =>
+      localNumbers(view._pdfPages?.[pageIndex]?.viewBox, 4),
+    );
+    if (cached && cached[2] > cached[0] && cached[3] > cached[1]) return cached;
+    const failures: string[] = [];
+    const doc = probeWindow(view, "viewbox", failures)?.doc;
+    if (!doc) continue;
+    const numPages = safe(() => doc.numPages);
+    if (numPages !== undefined && pageIndex >= numPages) continue;
+    try {
+      const page = await doc.getPage(pageIndex + 1);
+      const box = localNumbers(page.view, 4);
+      if (box && box[2] > box[0] && box[3] > box[1]) return box;
+    } catch {
+      // Try next view or return undefined cleanly.
+    }
+  }
+  return undefined;
+}
+
 /** Read page geometry from Zotero's own PDF.js viewer, not its flattened full-text cache. */
 export async function getPdfLayoutParagraph(
   reader: _ZoteroTypes.ReaderInstance,

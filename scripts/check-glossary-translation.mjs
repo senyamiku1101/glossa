@@ -593,11 +593,44 @@ async function loadRunner({
     },
     { ztoolkit: { log: (...args) => logs.push(args) } },
   );
-  return { runner: runnerModule.runner, llm, store, glossaryMock, logs };
+  return {
+    runner: runnerModule.runner,
+    streamPopupTranslation: runnerModule.streamPopupTranslation,
+    streamPopupReview: runnerModule.streamPopupReview,
+    llm,
+    store,
+    glossaryMock,
+    logs,
+  };
 }
 
-const p1 = "甲".repeat(600) + "。";
-const p2 = "乙".repeat(600) + "。";
+const shortP1 = "甲".repeat(600) + "。";
+const shortP2 = "乙".repeat(600) + "。";
+same(
+  translationUtils.splitTranslationSource(shortP1 + shortP2, 1000),
+  [shortP1, shortP2],
+  "CJK sentences without spaces split cleanly after sentence punctuation",
+);
+same(
+  translationUtils.splitTranslationSource(
+    "甲".repeat(600) + "。”" + shortP2,
+    1000,
+  ),
+  ["甲".repeat(600) + "。”", shortP2],
+  "CJK sentences keep closing quotes attached to the preceding sentence",
+);
+const mediumMultiPara = [
+  "甲".repeat(650) + "。",
+  "乙".repeat(650) + "。",
+  "丙".repeat(600) + "。",
+].join("\n\n");
+same(
+  translationUtils.splitTranslationSource(mediumMultiPara),
+  [mediumMultiPara],
+  "normal multi-paragraph selections stay in one combined prompt without repeating rules",
+);
+const p1 = "甲".repeat(2000) + "。";
+const p2 = "乙".repeat(2000) + "。";
 const longSource = p1 + " " + p2;
 const paragraphRendered = {
   prompt: "long translation prompt",
@@ -986,6 +1019,40 @@ for (const turns of [
   assert.ok(
     flow.logs.some((args) => String(args[0]).includes("glossary unavailable")),
   );
+}
+
+{
+  // Floating popup translation + review: uses glossary, never writes to sidebar
+  // conversations, and never locks runner.busy.
+  const flow = await loadRunner({
+    terms: [{ source: "nacelle", target: "短舱" }],
+  });
+  flow.llm.queue.push({ text: "短舱初译" }, { text: "短舱审校定稿 " + END });
+  const deltas = [];
+  const translated = await flow.streamPopupTranslation({
+    source: "turbofan nacelle",
+    promptFor: async (piece) => "T:" + piece,
+    onDelta: (t) => deltas.push(t),
+    onCancelReady: () => {},
+    stopped: () => false,
+  });
+  assert.equal(translated.ok, true);
+  assert.equal(translated.text, "短舱初译");
+  assert.ok(flow.llm.calls[0].messages.at(-1).content.includes("短舱"));
+  assert.equal(flow.store.commits.length, 0, "popup must not write to sidebar");
+  assert.equal(flow.runner.busy, false, "popup must not lock sidebar runner");
+
+  const reviewed = await flow.streamPopupReview({
+    pieces: translated.pieces,
+    onDelta: () => {},
+    onCancelReady: () => {},
+    stopped: () => false,
+  });
+  assert.equal(reviewed.ok, true);
+  assert.equal(reviewed.text, "短舱审校定稿");
+  assert.equal(flow.llm.calls[1].config.model, "review-m");
+  assert.ok(flow.llm.calls[1].messages.at(-1).content.includes("短舱"));
+  assert.equal(flow.store.commits.length, 0);
 }
 
 console.log(

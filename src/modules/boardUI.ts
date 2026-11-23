@@ -1,8 +1,7 @@
-import { config } from "../../package.json";
 import { getString } from "../utils/locale";
-import { getPref, setPref } from "../utils/prefs";
 import { BOARD_SOURCE_LIMIT, type BoardEntry } from "../utils/board";
 import { board } from "./board";
+import { renderMarkdown } from "./markdown";
 
 export type BoardPanel = {
   root: HTMLElement;
@@ -12,23 +11,24 @@ export type BoardPanel = {
 export type BoardPanelOptions = {
   /** Called when the entry's source paper title is clicked. */
   onJump(itemKey: string): void;
+  /** Optional callback to add a pinned board entry back to the composer tray. */
+  onAddToChat?(entry: BoardEntry): void;
 };
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
-const EXPANDED_PREF = "board.expanded";
 const COPIED_MS = 1200;
 const REMOVE_PREVIEW = 60;
-/** Translations longer than this are folded with a show-more button. */
-const LONG_TEXT_LINES = 12;
-const LONG_TEXT_CHARS = 800;
+/** Long entries are folded with a show-more button. */
+const LONG_TEXT_LINES = 10;
+const LONG_TEXT_CHARS = 600;
 
 let panelCount = 0;
 
 /**
- * The global translation board at the top of the chat pane: a collapsible
- * strip with one card per saved translation. The board store owns the data
- * and notifies subscribers; this module is pure DOM and re-reads the store
- * on every change. All user text is set with `textContent`, never HTML.
+ * Sticky-note style global board pinned to the top edge of the chat workspace.
+ * Collapsed: a compact warm Post-it tab pinned to the top-right edge (0px
+ * layout height stolen from the header or conversation).
+ * Expanded: a floating sticky-note sheet overlaid over the top of the chat.
  */
 export function createBoardPanel(
   win: Window,
@@ -58,24 +58,31 @@ export function createBoardPanel(
 
   // ---- structure
 
-  const root = element("div", "glossa-board");
+  const root = element("div", "glossa-board glossa-sticky-board");
 
   const toggle = element("button", "glossa-board-toggle");
   toggle.type = "button";
   toggle.setAttribute("aria-controls", listId);
-  const chevron = element("span", "glossa-board-chevron");
-  chevron.setAttribute("aria-hidden", "true");
+  const pinIcon = element("span", "glossa-board-pin");
+  pinIcon.setAttribute("aria-hidden", "true");
+  pinIcon.innerHTML = PIN_ICON;
   const title = element("span", "glossa-board-title");
   title.textContent = getString("board-title");
   const count = element("span", "glossa-board-count");
-  toggle.append(chevron, title, count);
+  toggle.append(pinIcon, title, count);
 
   const clearButton = element("button", "glossa-board-clear");
   clearButton.type = "button";
   clearButton.textContent = getString("board-clear");
 
+  const closeButton = element("button", "glossa-board-close");
+  closeButton.type = "button";
+  closeButton.innerHTML = CLOSE_ICON;
+  closeButton.title = getString("board-collapse");
+  closeButton.setAttribute("aria-label", getString("board-collapse"));
+
   const head = element("div", "glossa-board-head");
-  head.append(toggle, clearButton);
+  head.append(toggle, clearButton, closeButton);
 
   const list = element("div", "glossa-board-list");
   list.id = listId;
@@ -92,19 +99,21 @@ export function createBoardPanel(
 
   function setExpanded(next: boolean) {
     expanded = next;
+    root.classList.toggle("glossa-board-open", next);
     toggle.setAttribute("aria-expanded", String(next));
     toggle.title = getString(next ? "board-collapse" : "board-expand");
-    chevron.textContent = next ? "▾" : "▸";
     list.hidden = !next;
     clearButton.hidden = !next;
+    closeButton.hidden = !next;
     syncStatus();
   }
 
   function updateCount(total: number) {
-    count.textContent = getString("board-count", { args: { count: total } });
+    root.classList.toggle("glossa-board-is-empty", total === 0);
+    count.textContent = String(total);
     toggle.setAttribute(
       "aria-label",
-      `${getString("board-title")} · ${count.textContent}`,
+      `${getString("board-title")} · ${getString("board-count", { args: { count: total } })}`,
     );
   }
 
@@ -123,7 +132,6 @@ export function createBoardPanel(
     else if (empty) text = getString("board-empty");
     status.textContent = text;
     status.classList.toggle("glossa-board-empty", empty);
-    // The collapsed strip is a single row; status is only useful when open.
     status.hidden = !text || !expanded;
   }
 
@@ -134,8 +142,6 @@ export function createBoardPanel(
 
   function render() {
     if (disposed) return;
-    // A fresh render reflects a new snapshot, so an old failure no longer
-    // describes the displayed state.
     operationError = "";
     const entries = loadFailed ? [] : board.list();
     updateCount(entries.length);
@@ -152,17 +158,16 @@ export function createBoardPanel(
     item.setAttribute("role", "listitem");
     item.dataset.entryId = entry.id;
 
-    // Same rhythm as an answer card: body, footer meta, then folded source.
-    item.append(renderTranslation(entry));
+    item.append(renderBody(entry));
     item.append(renderMeta(entry));
-    item.append(renderSource(entry));
+    if (entry.source.trim()) item.append(renderSource(entry));
     return item;
   }
 
-  function renderTranslation(entry: BoardEntry): HTMLElement {
+  function renderBody(entry: BoardEntry): HTMLElement {
     const host = element("div", "glossa-board-text-wrap");
-    const text = element("div", "glossa-board-text");
-    text.textContent = entry.translation;
+    const text = element("div", "glossa-board-text glossa-msg");
+    renderMarkdown(text, entry.translation);
     host.append(text);
     if (!isLongText(entry.translation)) return host;
     text.classList.add("glossa-board-text-clamped");
@@ -185,7 +190,9 @@ export function createBoardPanel(
   function renderSource(entry: BoardEntry): HTMLElement {
     const details = element("details", "glossa-board-source");
     const summary = element("summary", "glossa-board-source-summary");
-    summary.textContent = getString("board-source");
+    summary.textContent = getString(
+      entry.mode === "note" ? "board-question" : "board-source",
+    );
     const body = element("div", "glossa-board-source-body");
     body.textContent = entry.source;
     details.append(summary, body);
@@ -206,7 +213,7 @@ export function createBoardPanel(
 
     const mode = element(
       "span",
-      `glossa-board-mode glossa-board-tl-${entry.status}`,
+      `glossa-board-mode glossa-board-tl-${entry.mode === "note" ? "note" : entry.status}`,
     );
     mode.textContent = statusText(entry);
 
@@ -214,6 +221,17 @@ export function createBoardPanel(
     date.textContent = formatDate(entry.addedAt);
 
     const actions = element("span", "glossa-board-actions");
+    if (options.onAddToChat) {
+      const toChat = element("button", "glossa-board-to-chat");
+      toChat.type = "button";
+      toChat.textContent = getString("board-add-chat");
+      toChat.title = getString("board-add-chat");
+      toChat.addEventListener("click", () => {
+        options.onAddToChat?.(entry);
+        setExpanded(false);
+      });
+      actions.append(toChat);
+    }
     const copy = element("button", "glossa-board-copy");
     copy.type = "button";
     copy.textContent = getString("board-copy");
@@ -230,17 +248,10 @@ export function createBoardPanel(
     remove.addEventListener("click", () => void removeEntry(entry, remove));
     actions.append(copy, remove);
 
-    // Chip first, like the translation footer; the paper title then reads as
-    // the provenance link rather than the leading label.
     meta.append(mode, paper, date, actions);
     return meta;
   }
 
-  /**
-   * Source title; clicking jumps back to the item. A deleted item is disabled.
-   * After a restart the item is not in memory yet, so a cache miss is checked
-   * against the database instead of leaving valid entries disabled.
-   */
   function renderPaper(entry: BoardEntry): HTMLButtonElement {
     const paper = element("button", "glossa-board-paper");
     paper.type = "button";
@@ -249,7 +260,10 @@ export function createBoardPanel(
       paper.disabled = false;
       paper.title = entry.itemTitle;
       paper.setAttribute("aria-label", entry.itemTitle);
-      paper.addEventListener("click", () => options.onJump(entry.itemKey));
+      paper.addEventListener("click", () => {
+        setExpanded(false);
+        options.onJump(entry.itemKey);
+      });
     };
     const disable = () => {
       paper.disabled = true;
@@ -310,7 +324,6 @@ export function createBoardPanel(
     button.disabled = true;
     try {
       await board.remove(entry.id);
-      // Success notifies subscribers; the list re-renders without this card.
     } catch (error) {
       ztoolkit.log("[Glossa] board remove failed", error);
       if (doc.contains(button)) button.disabled = false;
@@ -335,34 +348,33 @@ export function createBoardPanel(
       setOperationError(messageOf(error, "board-clear-error"));
     } finally {
       clearing = false;
-      // The store may have notified before this frame; restore the button.
       if (!disposed) updateClear(board.list().length);
     }
   }
 
   // ---- wiring
 
-  toggle.addEventListener("click", () => {
-    const next = !expanded;
-    setExpanded(next);
-    try {
-      setPref(EXPANDED_PREF, next);
-    } catch (error) {
-      ztoolkit.log("[Glossa] board expansion pref failed", error);
-    }
-  });
+  toggle.addEventListener("click", () => setExpanded(!expanded));
+  closeButton.addEventListener("click", () => setExpanded(false));
   clearButton.addEventListener("click", () => void clearBoard());
 
-  const unsubscribe = board.subscribe(() => render());
-  // Every item-pane workspace (library, each reader tab) shares one expansion
-  // value; the pref observer keeps them in sync without focus.
-  const prefObserver = Zotero.Prefs.registerObserver(
-    `${config.prefsPrefix}.${EXPANDED_PREF}`,
-    () => setExpanded(Boolean(getPref(EXPANDED_PREF))),
-    true,
-  );
+  const onOutsidePointer = (ev: Event) => {
+    if (!expanded) return;
+    const node = ev.target as Node | null;
+    if (node && !root.contains(node)) setExpanded(false);
+  };
+  const onKeyDown = (ev: Event) => {
+    if (expanded && (ev as KeyboardEvent).key === "Escape") {
+      ev.stopPropagation();
+      setExpanded(false);
+    }
+  };
+  doc.addEventListener("pointerdown", onOutsidePointer);
+  doc.addEventListener("keydown", onKeyDown);
 
-  setExpanded(Boolean(getPref(EXPANDED_PREF)));
+  const unsubscribe = board.subscribe(() => render());
+
+  setExpanded(false);
   render();
   void board.ensureLoaded().then(
     () => {
@@ -383,7 +395,8 @@ export function createBoardPanel(
       if (disposed) return;
       disposed = true;
       unsubscribe();
-      Zotero.Prefs.unregisterObserver(prefObserver);
+      doc.removeEventListener("pointerdown", onOutsidePointer);
+      doc.removeEventListener("keydown", onKeyDown);
       for (const timer of timers) win.clearTimeout(timer);
       timers.clear();
       root.remove();
@@ -400,8 +413,8 @@ export function parseBoardItemKey(value: string) {
   return { libraryID, key: value.slice(slash + 1) };
 }
 
-/** Reuse the existing translation labels; no board-specific mode keys. */
 function statusText(entry: BoardEntry) {
+  if (entry.mode === "note") return getString("board-note-badge");
   switch (entry.status) {
     case "reviewed":
       return getString("translation-status-reviewed");
@@ -439,10 +452,15 @@ function previewText(text: string) {
     : flat;
 }
 
-/** Store errors already carry a localized message; keep odd ones generic. */
 function messageOf(error: unknown, fallbackKey: string) {
   const text = String((error as Error)?.message || error || "");
   return text && text.length < 300 && !text.includes("\n")
     ? text
     : getString(fallbackKey);
 }
+
+const PIN_ICON =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 2.5h5l-.6 3.8 1.9 1.9v1.3H4.2V8.2l1.9-1.9-.6-3.8z"/><path d="M8 9.5V14"/></svg>';
+
+const CLOSE_ICON =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>';

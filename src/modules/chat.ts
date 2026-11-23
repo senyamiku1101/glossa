@@ -130,7 +130,7 @@ function getPanel(win: Window) {
 function mainWindowFor(event: Event) {
   const view = (event as KeyboardEvent).view;
   return (
-    Zotero.getMainWindows().find((win) => win === view) ||
+    Zotero.getMainWindows().find((win) => win === view || win === view?.top) ||
     Zotero.getMainWindow()
   );
 }

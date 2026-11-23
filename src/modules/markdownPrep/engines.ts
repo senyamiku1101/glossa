@@ -74,6 +74,3 @@ export async function resolveCloudGate(
   if (!source) return { ok: false, status: "failed", reason: "internal-error" };
   return { ...decision, source, settings };
 }
-export function gateLabel(gate: ResolvedCloudGate): string {
-  return gate.ok ? "ok" : gate.status + ":" + gate.reason;
-}

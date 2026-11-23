@@ -12,17 +12,24 @@ if (
 ) {
   throw new Error("Source bundle path escaped the addon directory");
 }
-await rm(bundled, { recursive: true, force: true });
+await rm(bundled, {
+  recursive: true,
+  force: true,
+  maxRetries: 3,
+  retryDelay: 100,
+});
 await mkdir(bundled, { recursive: true });
 for (const name of [
   "src",
   "scripts",
   "typings",
+  "test/fixtures",
   "package.json",
   "package-lock.json",
   "zotero-plugin.config.ts",
   "tsconfig.json",
   "eslint.config.mjs",
+  ".prettierignore",
   ".env.example",
   "README.md",
   "CHANGELOG.md",

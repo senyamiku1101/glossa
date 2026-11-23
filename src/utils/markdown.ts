@@ -334,6 +334,29 @@ function codeSpanEnd(src: string, i: number) {
   return -1;
 }
 
+function looksLikeSpacedMath(inner: string): boolean {
+  const trimmed = inner.trim();
+  if (!trimmed || trimmed.includes("\n")) return false;
+  // Reject currency ranges such as "$5 and $10" or "$5 million to $10".
+  if (/^\d+(?:[.,]\d+)?\s+[A-Za-z]{2,}\b/.test(trimmed)) return false;
+  // Explicit TeX command (e.g. `$ \epsilon $`, `$ \Delta M $`, `$ \bar{M} $`).
+  if (/\\[A-Za-z]+/.test(trimmed)) return true;
+  // Math scripts / relations / Greek symbols without prose conjunctions.
+  if (
+    /[_^=<>±×÷∑∫∂∇≈≠≤≥∞α-ωΑ-Ω]/.test(trimmed) &&
+    !/\b(?:and|or|to|for|the|per|with|from|into)\b/i.test(trimmed)
+  ) {
+    return true;
+  }
+  // Short symbolic variable / algebraic expression (e.g. `$ M $`, `$ x + y $`).
+  return (
+    trimmed.length <= 24 &&
+    /^[A-Za-z0-9()[\]{}+\-*/.,=<>|^_'\s]+$/.test(trimmed) &&
+    /[A-Za-z]/.test(trimmed) &&
+    !/\b[A-Za-z]{4,}\b/.test(trimmed)
+  );
+}
+
 export function parseInline(src: string): Inline[] {
   const out: Inline[] = [];
   let text = "";
@@ -403,9 +426,9 @@ export function parseInline(src: string): Inline[] {
       const ok =
         inner &&
         (delim === "$$" ||
-          (!/^\s|\s$/.test(inner) &&
-            !inner.includes("\n") &&
-            !/\d/.test(src[close + 1] ?? "")));
+          (!inner.includes("\n") &&
+            !/\d/.test(src[close + 1] ?? "") &&
+            (!/^\s|\s$/.test(inner) || looksLikeSpacedMath(inner))));
       if (ok) {
         flush();
         out.push({ type: "math", text: inner.trim() });
@@ -540,6 +563,26 @@ const TEX_SYMBOLS: Record<string, string> = {
   quad: "  ", qquad: "    ",
 };
 
+const TEX_ACCENTS: Record<string, string> = {
+  bar: "\u0304",
+  overline: "\u0304",
+  hat: "\u0302",
+  widehat: "\u0302",
+  tilde: "\u0303",
+  widetilde: "\u0303",
+  dot: "\u0307",
+  ddot: "\u0308",
+  vec: "\u20d7",
+};
+
+function applyTexAccent(body: string, combining: string): string {
+  const trimmed = body.trim();
+  if (!trimmed) return "";
+  // Attach the combining mark to the first visible character (e.g. M -> M̄, Φ''' -> Φ̂''').
+  const chars = Array.from(trimmed);
+  return chars[0] + combining + chars.slice(1).join("");
+}
+
 /**
  * TeX as readable text: common symbols become Unicode, ^ and _ become
  * super/subscripts. Not a typesetter; it keeps unknown commands as typed.
@@ -555,7 +598,16 @@ export function texToParts(tex: string): MathPart[] {
     .replace(/\\sqrt\s*\{([^{}]*)\}/g, "√($1)")
     .replace(/\\[,;: !]/g, " ")
     .replace(/\\\\/g, " ")
-    .replace(/\\([A-Za-z]+)/g, (m, name: string) => TEX_SYMBOLS[name] ?? m);
+    .replace(/\\([A-Za-z]+)/g, (m, name: string) => TEX_SYMBOLS[name] ?? m)
+    .replace(
+      /\\(bar|overline|hat|widehat|tilde|widetilde|dot|ddot|vec)\s*\{([^{}]*)\}/g,
+      (_m, accent: string, inner: string) =>
+        applyTexAccent(inner, TEX_ACCENTS[accent] ?? ""),
+    )
+    .replace(
+      /\\(bar|hat|tilde|dot|ddot|vec)\s+([A-Za-zα-ωΑ-Ω])/g,
+      (_m, accent: string, ch: string) => ch + (TEX_ACCENTS[accent] ?? ""),
+    );
   s = s.replace(/\(([A-Za-z0-9α-ωΑ-Ω])\)\/\(([A-Za-z0-9α-ωΑ-Ω])\)/g, "$1/$2");
 
   const parts: MathPart[] = [];

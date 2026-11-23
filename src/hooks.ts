@@ -24,6 +24,10 @@ import {
   registerSelectionPopup,
   unregisterSelectionPopup,
 } from "./modules/selectionPopup";
+import {
+  registerReaderOverlay,
+  unregisterReaderOverlay,
+} from "./modules/readerOverlay";
 import { registerSidebar, unregisterSidebar } from "./modules/sidebar";
 
 async function onStartup() {
@@ -45,6 +49,7 @@ async function onStartup() {
   chat.init();
   registerSidebar();
   registerSelectionPopup();
+  registerReaderOverlay();
 
   // Cloud source first, then the queue that reads it. Both are defensive: a
   // failure here must not stop the rest of the plugin from starting.
@@ -74,7 +79,7 @@ async function onStartup() {
 }
 
 async function onMainWindowLoad(win: _ZoteroTypes.MainWindow) {
-  addon.data.ztoolkit = createZToolkit();
+  addon.data.ztoolkit ||= createZToolkit();
   win.MozXULElement.insertFTLIfNeeded(`${config.addonRef}-mainWindow.ftl`);
   chat.register(win);
   try {
@@ -91,7 +96,6 @@ async function onMainWindowUnload(win: Window) {
     ztoolkit.log("[Glossa] markdown UI unregister failed", error);
   }
   chat.unregister(win);
-  ztoolkit.unregisterAll();
 }
 
 function onShutdown() {
@@ -108,6 +112,7 @@ function onShutdown() {
     ztoolkit.log("[Glossa] markdown queue dispose failed", error);
   }
   unregisterSidebar();
+  unregisterReaderOverlay();
   unregisterSelectionPopup();
   disposeChatViews();
   disposeGlossaryWindows();

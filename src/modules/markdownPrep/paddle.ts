@@ -572,7 +572,37 @@ async function submitJob(args: {
 }
 
 type PollOutcome =
-  { state: "waiting" } | { state: "done"; jsonUrl: string; totalPages: number };
+  | { state: "waiting" }
+  | {
+      state: "done";
+      jsonUrl: string;
+      totalPages: number;
+      pageSizes?: Array<[number, number] | undefined>;
+    };
+
+function extractDataInfoPageSizes(
+  dataInfo: Record<string, unknown> | undefined,
+): Array<[number, number] | undefined> | undefined {
+  if (!dataInfo) return undefined;
+  const pages = Array.isArray(dataInfo.pages) ? dataInfo.pages : undefined;
+  if (pages && pages.length) {
+    const sizes = pages.map((entry): [number, number] | undefined => {
+      const rec = asRecord(entry);
+      const w = asNumber(rec?.width ?? rec?.pageWidth ?? rec?.imageWidth);
+      const h = asNumber(rec?.height ?? rec?.pageHeight ?? rec?.imageHeight);
+      return w && h && w > 0 && h > 0 ? [w, h] : undefined;
+    });
+    if (sizes.some(Boolean)) return sizes;
+  }
+  const w = asNumber(
+    dataInfo.width ?? dataInfo.pageWidth ?? dataInfo.imageWidth,
+  );
+  const h = asNumber(
+    dataInfo.height ?? dataInfo.pageHeight ?? dataInfo.imageHeight,
+  );
+  if (w && h && w > 0 && h > 0) return [[w, h]];
+  return undefined;
+}
 
 async function pollJob(args: {
   transport: PaddleTransport;
@@ -654,8 +684,14 @@ async function pollJob(args: {
           ),
         );
       }
+      const pageSizes = extractDataInfoPageSizes(asRecord(data?.dataInfo));
       args.onProgress?.({ stage: "polling", page: extracted, pages: total });
-      return { state: "done", jsonUrl, totalPages: total ?? 0 };
+      return {
+        state: "done",
+        jsonUrl,
+        totalPages: total ?? 0,
+        ...(pageSizes ? { pageSizes } : {}),
+      };
     }
     if (state === "failed") {
       const message = asString(data?.errorMsg) || "Paddle job failed";
@@ -936,6 +972,7 @@ async function runPaddle(
       model,
       remote,
       assets: downloaded.assets,
+      ...(poll.pageSizes ? { pageSizes: poll.pageSizes } : {}),
       expectedPages: expectedPages || undefined,
       truncated,
     });

@@ -1,11 +1,6 @@
 pref-intro = 按工作流程配置模型、文献来源与本地工作区。所有设置都在这一个页面，修改后立即生效。
-pref-profiles-title = 服务配置
-pref-profiles-help = 保存不同服务商和模型的连接设置，随时切换。
-pref-connection-title = 对话连接
 pref-connection-help = 填写模型接口与密钥；可选参数按服务商能力启用。
-pref-retrieval-title = 文献来源
 pref-retrieval-help = 向量检索可选。关闭时仍能通过关键词寻找 PDF 段落。
-pref-workspace-title = 阅读工作区
 pref-workspace-help = 控制带入对话的内容、历史长度和可复用的研究指令。
 pref-general = 常规
 pref-profile-save = + 保存当前配置
@@ -61,18 +56,24 @@ pref-translation-choose-profile = 请选择配置档
 pref-translation-profile-missing = 配置档已删除，请重新选择
 pref-translation-help = 普通翻译继续使用当前模型。协同翻译依次调用两个配置档，耗时和费用更高；原文及初稿将发送到所选服务。仅审校已有译文时只调用审校配置，此时会把原文和该译文发送到审校服务。
 
-# ---- 论文正文准备（仅 PaddleOCR 云）----
+# ---- 论文正文准备 ----
 
 pref-tab-markdown = 论文正文
 pref-markdown-provider-title = 服务商配置
 pref-markdown-provider = 解析引擎
+pref-markdown-provider-paddle = PaddleOCR
+pref-markdown-provider-mineru = MinerU
 pref-markdown-get-key = 获取 API Key ↗
 pref-markdown-token = API Key
 pref-markdown-endpoint = Endpoint
 pref-markdown-base-url = Base URL
 pref-markdown-model = 模型
 pref-markdown-model-version = 模型版本
+pref-markdown-mineru-vlm = VLM
+pref-markdown-mineru-pipeline = Pipeline
 pref-markdown-language = 语言
+pref-markdown-lang-ch = 中文 (ch)
+pref-markdown-lang-en = English (en)
 pref-markdown-advanced = 高级
 pref-markdown-ocr = 强制 OCR
 pref-markdown-self-hosted = 自建服务（允许 HTTP）

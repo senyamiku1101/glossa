@@ -8,10 +8,5 @@ yarn.lock
 pnpm-lock.yaml
 tmp
 releases
-# Historical local validation reports (not shipped source)
-docs/markdown-bundle-review.md
-docs/markdown-bundle-validation.md
-docs/markdown-desktop-report.md
-docs/markdown-review-report.md
-docs/markdown-ui-design.md
-docs/markdown-validation-report.md
+addon/source
+

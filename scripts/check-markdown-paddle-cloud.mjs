@@ -459,31 +459,10 @@ assert.equal(zero.calls.length, 0);
     },
   );
   assert.equal(result.ok, true, JSON.stringify(result));
-  assert.equal(result.status, "done");
+  assert.equal(result.status, "partial");
   assert.ok(result.body.quality.caveats.includes("truncated-pages"));
   const body = new TextDecoder().decode(failAfter(transport, 0).body);
   assert.match(body, /name="pageRanges"[\s\S]*1-1/);
-}
-
-// maxPages is ignored: the first release never silently caps to first N pages.
-{
-  const transport = mockTransport([
-    () => ({ status: 200, body: ENVELOPE("job-maxpages") }),
-    () => ({ status: 200, body: doneBody("https://cdn.example/result.jsonl") }),
-    () => ({ status: 200, body: jsonl }),
-    () => ({ status: 200, body: arrayBuffer(pngBytes) }),
-    () => ({ status: 200, body: arrayBuffer(pngBytes) }),
-  ]);
-  const result = await runPaddleBodyForTests(input, options({ maxPages: 1 }), {
-    transport,
-    config,
-    readPdf: async () => PDF,
-    sleep: async () => {},
-  });
-  assert.equal(result.ok, true, JSON.stringify(result));
-  assert.equal(result.status, "done");
-  const body = new TextDecoder().decode(failAfter(transport, 0).body);
-  assert.ok(!body.includes('name="pageRanges"'));
 }
 
 // The real PDF has 3 pages but the service returned 2: partial, not done.
@@ -506,7 +485,7 @@ assert.equal(zero.calls.length, 0);
     },
   );
   assert.equal(result.ok, true, JSON.stringify(result));
-  assert.equal(result.status, "done");
+  assert.equal(result.status, "partial");
   assert.ok(result.body.quality.caveats.includes("partial-pages"));
 }
 
@@ -532,7 +511,7 @@ assert.equal(zero.calls.length, 0);
     },
   );
   assert.equal(result.ok, true, JSON.stringify(result));
-  assert.equal(result.status, "done");
+  assert.equal(result.status, "partial");
   assert.equal(result.body.source.pageCount, 5);
   assert.ok(result.body.quality.caveats.includes("partial-pages"));
 }
@@ -554,7 +533,7 @@ assert.equal(zero.calls.length, 0);
     sleep: async () => {},
   });
   assert.equal(result.ok, true, JSON.stringify(result));
-  assert.equal(result.status, "done");
+  assert.equal(result.status, "partial");
   assert.equal(
     result.body.assets.filter((asset) => asset.filename.startsWith("images/"))
       .length,
@@ -738,7 +717,7 @@ async function runWith(steps, overrides = {}, configOverride = config) {
     () => ({ status: 404, body: "" }),
   ]);
   assert.equal(result.ok, true, JSON.stringify(result));
-  assert.equal(result.status, "done");
+  assert.equal(result.status, "partial");
   assert.equal(
     result.body.assets.filter((a) => a.filename.startsWith("images/")).length,
     0,

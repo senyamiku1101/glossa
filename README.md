@@ -51,12 +51,11 @@ Zotero 7, 8, 9 and 10 (`strict_min_version` 7.0, `strict_max_version` 10.*). Any
 - **Item pane chat**: a Glossa section in the item pane, in the library and next to every open PDF (Zotero's official `ItemPaneManager` API)
 - **Floating chat** (`Ctrl+/`, also inside the PDF reader); both views share the item's sessions and stream the same answer
 - **Session history**: a full-height history view with search and recent chats for the current paper; create, switch, rename, delete, or save a conversation as a Zotero note
-- **Focused sidebar**: select Glossa in the side navigation for a full-height workspace with a fixed composer and separately scrolling messages; selecting PDF text does not move keyboard focus
-- **Sent-context trace**: expand a question to inspect the user message and document passages sent with that turn (saved locally, capped at 12,000 characters and marked if truncated)
-- **Conversations saved** as plain JSON under `<Zotero data directory>/glossa/conversations/`, one file per item; deleted with the item
-- **Selection popup**: a single row holds the scope, Translate / Collaborative translation / Explain in detail, and Send controls. Paragraphs expands the selection to all complete natural paragraphs it touches, preserving their order and paragraph breaks. Choose the default scope (Selection or Paragraphs) in settings; recognition never sends automatically. If boundaries cannot be confirmed, no request is sent and the scope stays on Paragraphs with a diagnostic. The Send arrow is gray and disabled while recognition is pending or unsuccessful, and green only when usable text is ready. Select the text again or switch the scope to retry recognition; manually switch to Selection to use the original text.
-- **Context modes** for typed questions: chat only, PDF relevant passages, PDF full text, or abstract
-- **Three protocols**: OpenAI Chat Completions, OpenAI Responses, Anthropic Messages; reasoning is shown in a collapsible block
+- **Focused sidebar & multi-context workbench**: select Glossa in the side navigation for a full-height workspace where you can stage multiple PDF text excerpts, full paragraphs, figures (with image thumbnails), tables and display equations together before asking. When items are staged, Glossa sends strictly your selected context unless you toggle **+ Search full paper**; with no staged items, **Use current paper** switches between paper-grounded Q&A and plain chat.
+- **Sticky-note board & clean cards**: every answer card supports copy, **Add to board**, **Delete**, and compact header toggles for **Thinking** and **Context**; pinned notes live in a sticky-note tab pinned at the top of the workspace and can be added back into chat with one click.
+- **Conversations saved** as plain JSON under `<Zotero data directory>/glossa/conversations/`, one file per item; deleted with the item.
+- **Integrated selection popup & hover overlay**: `Translate`, `Full` (complete paragraph), `Add to chat` and the glossary button dock beside Zotero's highlight colors. Translations stream inline inside the popup and can be saved directly as native Zotero highlight annotations. Hovering recognized figures, tables or display equations offers 1-click **Add to chat** and **Annotate**.
+- **Three multimodal protocols**: OpenAI Chat Completions, OpenAI Responses and Anthropic Messages with vision image support and automatic text-only fallback.
 - **Settings**: provider presets, Base/Full URL, model list fetched from the provider, temperature / max tokens / reasoning effort toggles, system prompt, extra request params (JSON)
 - **Profiles**: save, switch, rename and delete complete settings (keys included); test one profile or all of them
 - **Collaborative translation (two models)**: the default quick translation is unchanged and keeps using the current model. Collaborative translation drafts with one saved profile and then reviews with a second, so it runs as two stages and costs more time and money; long source text is chunked, which can produce additional requests. The source text and the draft are sent to both selected services. A finished translation can also be reviewed on demand, which calls only the review profile and requires a record that kept its complete source text. Both profiles must already exist in settings; the choice applies to that translation only and does not switch the current chat settings.
@@ -84,7 +83,7 @@ Keys go to the login manager (`logins.json`, encrypted with the profile's `key4.
 
 Every production XPI includes the full AGPL license and a `source/` directory with the TypeScript, build script, configuration, dependency lockfile and documentation. To rebuild from an XPI, extract it, put its runtime files in an `addon/` directory, copy the contents of `source/` next to `addon/`, then run `npm ci && npm run build` from that parent directory. The generated `addon/source/` directory is ignored by Git and rebuilt on each run. Release tags should point to the same commit used to build the XPI.
 
-`npm run check` tests pure helpers plus session persistence, stream routing, and sidebar lifecycle with mocked Zotero services under Node; `npm run lint:check` must pass before a release.
+`npm run check` runs the Node verification suite across pure helpers, session persistence, PDF layout and multi-paragraph detection, selection popup, glossary and collaborative translation, translation board, locale consistency, and PaddleOCR / MinerU Markdown pipelines with mocked Zotero services; `npm run lint:check` must pass before a release.
 
 ## Command tags
 
@@ -126,11 +125,11 @@ See [PRINCIPLES.md](PRINCIPLES.md).
 - 翻译看板：每张译文卡片都有「加入看板」按钮。Glossa 面板顶部的可折叠看板会跨文献收集最多 50 条译文（连同原文），可复制、单条移除、展开查看原文、点击来源标题跳回文献或 PDF；「清空」需确认后才会清空。内容保存在本地 `<Zotero 数据目录>/glossa/board.json`，重启 Zotero 后仍在；它不是 Zotero 笔记，也不同步。
 - 删除译文：每张已完成的译文卡片都有「删除」按钮。确认后会删除该条译文以及产生它的问题；已加入看板的副本会保留。
 - Markdown 正文（0.2.19）：支持 **PaddleOCR** 和 **MinerU** 双服务商，可在设置中测试连接。结果保存为真实的 Zotero Markdown 子附件，标题为 **[Glossa] Body · <PDF文件名>**；独立 PDF 则创建同库、同分类的关联附件。可读的 `.md` 主文件与图片平铺在该 Markdown 附件自己的存储目录中，使用相对链接，随 Zotero / WebDAV 原生附件同步跨设备完整恢复。对话和检索优先读取与源 PDF 精准匹配的正文，缺失时回退到 PDF 文本。早期实验版本遗留在 PDF 目录内的 `glossa-body.md`、`glossa-meta.json` 和严格匹配的 `glossa-asset-…` 文件会自动清理，不触碰 PDF 或其他用户文件。
-- 极简正文工作流：条目和分类右键菜单只保留「转换正文 Markdown」与「删除正文 Markdown」，再次转换即可更新正文。Glossa 头部的「后台任务」图标打开紧凑浮层，提供实时进度、取消、重试、打开附件和清除已完成操作。设置页以「服务商配置」「自动化与阅读」两张卡片管理服务、新导入 PDF 自动转换及优先读取 Markdown。PaddleOCR、MinerU 与跨设备 WebDAV 同步均已通过真实文献实测。
-- 使用你自己的 API Key（OpenAI 兼容接口）。密钥存放在 Zotero 登录管理器里，不写入 `prefs.js`。
-- 每篇文献可保留多个会话；「新对话」创建新会话并保留历史。点击历史图标进入独立的聊天列表，可搜索、切换、重命名、删除，或保存到 Zotero 笔记；回答生成中可以点「停止」。
-- 划词弹窗将「选区 / 选段」「翻译 / 协同翻译 / 详细解释」和发送箭头放在同一排。「选段」扩展到选区覆盖的各个完整自然段，保留原顺序和段落间隔；设置中可选择默认范围。选择默认选段只会自动识别，点击箭头才发送，结果保存到当前文献的 Glossa 会话。识别中或识别失败时发送箭头为灰色并禁用，只有获得可用文字后才变绿；发送过程中也保持灰色禁用。无法确认完整边界（如复杂公式断开正文）时不发送，仍保留「选段」并显示诊断，可重新划选文字或切换范围重新识别，或手动切换为「选区」。
-- 点击右侧 Glossa 图标进入固定高度的阅读面板，输入区固定在底部，仅正文滚动。划词会更新引用，但不会抢焦点。
+- 极简正文工作流：条目和分类右键菜单保留「转换正文 Markdown」与「删除正文 Markdown」，再次转换即可更新正文。主文献库工具栏中的「后台任务」图标打开浮层，提供实时进度、取消、重试、打开附件和清除已完成操作。转换产物同时保存统一页面位置地图，支持公式/段落对齐与多模态图表识别。
+- 使用你自己的 API Key（支持 OpenAI Chat / Responses 与 Anthropic 协议，兼容视觉多模态并自动文本降级）。密钥存放在 Zotero 登录管理器里，不写入 `prefs.js`。
+- 每篇文献可保留多个会话；每条回答卡片都支持复制、加入看板、删除，以及卡片右上角按需展开「思考」与「上下文」。看板以暖色便利贴样式贴在会话区顶部，支持 Markdown 渲染与一键重新加入会话。
+- 划词弹窗将「翻译」「整段」「加入会话」和术语库按钮直接并排在 Zotero 高亮色块右侧：译文在弹框内直接流式显示，支持审校模型精译并一键保存为 Zotero 原生高亮批注；悬停在已识别的图、表、公式上可一键「加入会话」或「一键批注」。
+- 多上下文会话工作台：支持连续添加多段文字、多张图表与公式统一提问，默认严格只发送你选中的上下文，需要时可手动点亮「+ 附带全文检索」。
 - 旧版记录自动迁移，原文件保留为同目录下的 `.v1.bak` 备份。
 
 ### 安装与更新

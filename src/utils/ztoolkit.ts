@@ -6,7 +6,7 @@ export { createZToolkit };
 function createZToolkit() {
   const toolkit = new ZoteroToolkit();
   const env = __env__;
-  toolkit.basicOptions.log.prefix = `[${config.addonName}]`;
+  toolkit.basicOptions.log.prefix = "";
   toolkit.basicOptions.log.disableConsole = env === "production";
   toolkit.UI.basicOptions.ui.enableElementJSONLog = env === "development";
   toolkit.UI.basicOptions.ui.enableElementDOMLog = env === "development";

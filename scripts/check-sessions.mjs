@@ -268,8 +268,14 @@ plainStore.commitPending(
 assert.equal(
   plainStore.deleteTranslation("1/PLAIN", plainId, 1),
   false,
-  "non-translation answers are not deletable from the card",
+  "deleteTranslation keeps translation-only scope",
 );
+assert.equal(
+  plainStore.deleteExchange("1/PLAIN", plainId, 1),
+  true,
+  "deleteExchange removes any Q&A exchange cleanly",
+);
+assert.equal(plainStore.active("1/PLAIN").turns.length, 0);
 await flush(plainStore);
 
 // Exercise the real async runner: switching sessions during context building
@@ -327,17 +333,45 @@ assert.equal(receivedMessages[1].content, pair[0].content);
 assert.equal(receivedMessages.at(-1).content, "New context with follow-up");
 await flush(runStore);
 
-// A long paragraph is translated in verified pieces. An unmarked response is
-// retried at a smaller size instead of being saved as a complete translation.
+// Moderate multi-paragraph text stays in one combined request instead of
+// repeating the full translation prompt; very long inputs prefer paragraph
+// breaks (`\n\n`) before sentence boundaries.
+const threeParagraphs = [
+  "First paragraph explains the intake duct geometry. ".repeat(12).trim(),
+  "Second paragraph describes the distorted axial mean flow. "
+    .repeat(11)
+    .trim(),
+  "Third paragraph summarizes the acoustic mode propagation. "
+    .repeat(11)
+    .trim(),
+].join("\n\n");
+assert.ok(threeParagraphs.length > 1800 && threeParagraphs.length < 3500);
+assert.deepEqual(Array.from(splitTranslationSource(threeParagraphs)), [
+  threeParagraphs,
+]);
+
+const bigParaA = "Paragraph A describes steady intake distortion. "
+  .repeat(45)
+  .trim();
+const bigParaB = "Paragraph B analyzes fan tone propagation. "
+  .repeat(45)
+  .trim();
+assert.deepEqual(
+  Array.from(splitTranslationSource(`${bigParaA}\n\n${bigParaB}`)),
+  [bigParaA, bigParaB],
+);
+
+// A very long paragraph is translated in verified pieces. An unmarked response
+// is retried at a smaller size instead of being saved as a complete translation.
 const longSource = Array.from(
-  { length: 32 },
+  { length: 70 },
   (_, index) =>
     `Sentence ${index} explains a different part of the experiment.`,
 ).join(" ");
 const initialPieces = splitTranslationSource(longSource);
 assert.ok(initialPieces.length > 1);
 assert.equal(initialPieces.join(" "), longSource);
-assert.ok(initialPieces.every((piece) => piece.length <= 1000));
+assert.ok(initialPieces.every((piece) => piece.length <= 3500));
 const translationStore = new ConversationStore();
 await translationStore.ensureLoaded("1/TRANSLATION");
 const successfulSources = [];
@@ -363,7 +397,7 @@ const { runner: translationRunner } = await load("src/modules/runner.ts", {
         .at(-1)
         .content.split("SOURCE:")[1]
         .split("\n\n请在译文")[0];
-      if (source.length > 700) {
+      if (source.length > 2000) {
         delta({ text: "Unfinished", reasoning: "" });
         return {
           text: "Unfinished",

@@ -327,7 +327,8 @@ export async function loadJournal(): Promise<JournalFile> {
 
 export async function saveJournal(states: PrepState[]): Promise<void> {
   const file = bodyQueueFile();
-  await ensureDirectory(parentOf(file));
+  const parent = paths().parent(file);
+  if (parent) await ensureDirectory(parent);
   const payload: JournalFile = {
     version: JOURNAL_VERSION,
     savedAt: Date.now(),
@@ -374,28 +375,27 @@ export async function writeCacheEntry(
 ): Promise<CacheEntryMeta> {
   const dir = cacheEntryPath(dirName);
   const resourcesDir = paths().join(dir, "resources");
+  // Clear resources from any previous write in the same directory so a rebuilt
+  // body never retains stale nested images.
+  try {
+    await io().remove(resourcesDir, { ignoreAbsent: true, recursive: true });
+  } catch {
+    // A missing resource directory is fine.
+  }
   await ensureDirectory(resourcesDir);
   const kept: { relativePath: string; mime: string }[] = [];
   for (const resource of data.resources) {
     if (!isSafeRelativePath(resource.relativePath)) continue;
-    const target = paths().join(resourcesDir, resource.relativePath);
-    await ensureDirectory(parentOf(target));
+    const segments = resource.relativePath
+      .replace(/\\/g, "/")
+      .split("/")
+      .filter(Boolean);
+    if (!segments.length) continue;
+    const target = paths().join(resourcesDir, ...segments);
+    const parent = paths().parent(target);
+    if (parent) await ensureDirectory(parent);
     await writeBytesAtomic(target, resource.bytes);
     kept.push({ relativePath: resource.relativePath, mime: resource.mime });
-  }
-  // Remove resources from a previous write in the same directory so a rebuilt
-  // body can never keep a stale image.
-  try {
-    for (const name of await io().getChildren(resourcesDir)) {
-      const relative = name.replace(/\\/g, "/");
-      if (!kept.some((row) => row.relativePath === relative)) {
-        await io().remove(paths().join(resourcesDir, relative), {
-          ignoreAbsent: true,
-        });
-      }
-    }
-  } catch {
-    // A missing/empty resource directory is fine.
   }
   await writeTextAtomic(
     paths().join(dir, "resources.json"),
@@ -449,9 +449,12 @@ export async function loadCacheEntry(
   const resources: HostedResource[] = [];
   for (const row of manifest) {
     if (!isSafeRelativePath(row.relativePath)) continue;
-    const bytes = await readBytes(
-      paths().join(dir, "resources", row.relativePath),
-    );
+    const segments = row.relativePath
+      .replace(/\\/g, "/")
+      .split("/")
+      .filter(Boolean);
+    if (!segments.length) continue;
+    const bytes = await readBytes(paths().join(dir, "resources", ...segments));
     if (!bytes) continue;
     resources.push({ relativePath: row.relativePath, mime: row.mime, bytes });
   }
@@ -470,10 +473,6 @@ export async function dropCacheEntry(dirName: string): Promise<void> {
 }
 
 // ---- small IO helpers (also used by store.ts) ----
-
-function parentOf(path: string): string {
-  return paths().parent(path) ?? paths().join(path, "..");
-}
 
 export async function ensureDirectory(dir: string): Promise<void> {
   await io().makeDirectory(dir, {
